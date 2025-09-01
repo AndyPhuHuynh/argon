@@ -140,7 +140,7 @@ inline auto getIFlag(const OptionHolder<IOption>& holder) -> const IFlag * {
 
 inline auto resolveAllChildContextConfigs(Context *context) -> void { // NOLINT (misc-no-recursion)
     for (auto& optionHolder : context->getGroups()) {
-        const auto group = dynamic_cast<OptionGroup *>(optionHolder.getPtr());
+        const auto group = optionHolder.getPtr();
         auto& groupContext = group->getContext();
         groupContext.config = resolveContextConfig(context->config, groupContext.config);
         resolveAllChildContextConfigs(&groupContext);

@@ -55,7 +55,7 @@ public:
 
     [[nodiscard]] auto getFlagPrefixes() const -> const std::vector<std::string>&;
 
-    auto setFlagPrefixes(std::initializer_list<std::string_view> prefixes);
+    auto setFlagPrefixes(std::initializer_list<std::string_view> prefixes) -> ContextConfig&;
 };
 
 } // End namespace Argon
@@ -138,7 +138,7 @@ inline auto ContextConfig::getFlagPrefixes() const -> const std::vector<std::str
     return m_flagPrefixes;
 }
 
-inline auto ContextConfig::setFlagPrefixes(const std::initializer_list<std::string_view> prefixes) {
+inline auto ContextConfig::setFlagPrefixes(const std::initializer_list<std::string_view> prefixes) -> ContextConfig&{
     for (const auto prefix: prefixes) {
         if (const auto invalidChar = containsInvalidFlagCharacters(prefix); invalidChar.has_value()) {
             throw std::invalid_argument(
@@ -147,6 +147,7 @@ inline auto ContextConfig::setFlagPrefixes(const std::initializer_list<std::stri
         }
     }
     m_flagPrefixes.assign(prefixes.begin(), prefixes.end());
+    return *this;
 }
 
 template<typename T> requires detail::is_non_bool_number<T>

@@ -1014,8 +1014,12 @@ TEST_CASE("Option group config", "[options][option-group][config]") {
                     )
                 );
 
-    parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags)
-        .withDefaultCharMode(CharMode::ExpectInteger).withFlagPrefixes({"/"}).withMin(10).withMax(20);
+    parser.getConfig()
+        .setDefaultPositionalPolicy(PositionalPolicy::AfterFlags)
+        .setDefaultCharMode(CharMode::ExpectInteger)
+        .setFlagPrefixes({"/"})
+        .setMin<int>(10)
+        .setMax<int>(20);
 
     SECTION("Only top level") {
         const std::string input = "/topLevelChar 15 /topLevelInt 16 topLevelStringHere!";
@@ -1057,7 +1061,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         Option(true)                    [{"--option3", "--opt3"}];
 
     SECTION("Positional policy before flags") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         parser.parse("--opt1 --opt2 --opt3 -- --opt1 Hello --opt2 50 --opt3 false");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
@@ -1069,7 +1073,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
     }
 
     SECTION("Before flags dash at start") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         parser.parse("-- --opt1 Hello --opt2 50 --opt3 false");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "Positional1");
@@ -1081,7 +1085,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
     }
 
     SECTION("Before flags dash at end") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         parser.parse("--opt1 --opt2 --opt3 --");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
@@ -1093,7 +1097,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
     }
 
     SECTION("Positional policy after flags") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         parser.parse("--opt1 Hello --opt2 50 --opt3 false -- --opt1 --opt2 --opt3");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
@@ -1105,7 +1109,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
     }
 
     SECTION("After flags dash at start") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         parser.parse("-- --opt1 --opt2 --opt3");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
@@ -1117,7 +1121,7 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
     }
 
     SECTION("After flags dash at end") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         parser.parse("--opt1 Hello --opt2 50 --opt3 false --");
         CHECK(!parser.hasErrors());
         CHECK(parser.getPositionalValue<std::string, 0>() == "Positional1");
@@ -1157,7 +1161,7 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         | group1;
 
     SECTION("Test 1") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         group1.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         group2.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
 
@@ -1190,7 +1194,7 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
     }
 
     SECTION("Test 2") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         group1.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         group2.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
 

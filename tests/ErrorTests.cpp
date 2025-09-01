@@ -971,7 +971,7 @@ TEST_CASE("Positional policy with parser config", "[positional][errors]") {
     }
 
     SECTION("Mixed policy test") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         teachersGroup.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         schoolGroup.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         parser.parse("--name1 John 100 --name2 Sammy 200 --name3 Joshua 300 Sam --address [400 --street Jam 500] "
@@ -999,7 +999,7 @@ TEST_CASE("Double dash errors", "[double-dash][errors]") {
         Option(true)                    [{"--option3", "--opt3"}];
 
     SECTION("Before flags with multiple double dashes") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::BeforeFlags);
         parser.parse("--opt1 --opt2 --opt3 -- --opt1 -- --opt2 -- --opt3 false");
         CHECK(parser.hasErrors());
         const auto& syntaxErrors = CheckGroup(parser.getSyntaxErrors(), "Syntax Errors", -1, -1, 3);
@@ -1009,7 +1009,7 @@ TEST_CASE("Double dash errors", "[double-dash][errors]") {
     }
 
     SECTION("After flags with multiple dashes") {
-        parser.withDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
+        parser.getConfig().setDefaultPositionalPolicy(PositionalPolicy::AfterFlags);
         parser.parse("--opt1 Hello --opt2 50 --opt3 false -- -- -- opt3");
         CHECK(parser.hasErrors());
         const auto& syntaxErrors = CheckGroup(parser.getSyntaxErrors(), "Syntax Errors", -1, -1, 1);

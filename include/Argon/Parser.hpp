@@ -7,7 +7,6 @@
 #include <variant>
 
 #include "Argon/Config/ContextConfig.hpp"
-#include "Argon/Config/ContextConfigForwarder.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Flag.hpp"
 #include "Argon/Scanner.hpp"
@@ -26,7 +25,7 @@ namespace Argon {
     class Context;
     class Constraints;
 
-    class Parser final : public detail::ContextConfigForwarder<Parser> {
+    class Parser {
         std::unique_ptr<Context> m_context = std::make_unique<Context>(false);
         Scanner m_scanner;
 
@@ -150,10 +149,6 @@ namespace Argon {
         auto skipScope() -> void;
 
         auto getDoubleDashInScope(std::string_view groupName) -> std::optional<Token>;
-
-        [[nodiscard]] auto getConfigImpl() -> ContextConfig& override;
-
-        [[nodiscard]] auto getConfigImpl() const -> const ContextConfig& override;
     };
 
     template<typename Left, typename Right> requires detail::DerivesFrom<Left, IOption> && detail::DerivesFrom<Right, IOption>
@@ -770,14 +765,6 @@ auto operator|(Left&& left, Right&& right) -> Parser {
     parser.addOption(std::forward<Left>(left));
     parser.addOption(std::forward<Right>(right));
     return parser;
-}
-
-inline auto Parser::getConfigImpl() -> ContextConfig& {
-    return m_context->config;
-}
-
-inline auto Parser::getConfigImpl() const -> const ContextConfig& {
-    return m_context->config;
 }
 
 } // End namespace Argon
