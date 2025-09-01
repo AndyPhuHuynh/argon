@@ -100,6 +100,17 @@ inline auto wrapString(const std::string_view str, const size_t lineLength) -> s
     return sections;
 }
 
+inline bool containsWhitespace(const char *str) {
+    if (!str) return false;
+    for (const char *p = str; *p; ++p) {
+        if (std::isspace(static_cast<unsigned char>(*p))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+
 } // End namespace Argon
 
 #endif // ARGON_STRINGUTIL_INCLUDE

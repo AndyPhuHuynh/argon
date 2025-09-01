@@ -71,6 +71,7 @@ namespace Argon {
         auto rewindToBufferPosition() -> void;
         auto rewindBufferPos(uint32_t amount) -> void;
 
+        auto scanEscapeSequence() -> std::optional<char>;
         auto scanNextToken() -> void;
         auto scanBuffer() -> void;
 
@@ -217,6 +218,27 @@ inline auto Argon::Scanner::rewindBufferPos(const uint32_t amount) -> void {
     m_bufferPos -= rewindAmount;
 }
 
+inline auto Argon::Scanner::scanEscapeSequence() -> std::optional<char> {
+    const auto optCh = nextChar();
+    if (!optCh) {
+        m_errors.emplace_back(std::format("Unterminated escape sequence found at position {}", m_bufferPos));
+        return std::nullopt;
+    }
+    const char ch = *optCh;
+    switch (ch) {
+        case 'n':  return '\n';
+        case 'r':  return '\r';
+        case 't':  return '\t';
+        case '"':  return '"';
+        case '\\': return '\\';
+        case '\'': return '\'';
+        default: {
+            m_errors.emplace_back(std::format(R"(Unknown escape sequence "\{}" at position {})", ch, m_bufferPos));
+            return std::nullopt;
+        };
+    }
+}
+
 inline void Argon::Scanner::scanNextToken() {
     int position = static_cast<int>(m_bufferPos);
     auto optCh = nextChar();
@@ -244,14 +266,20 @@ inline void Argon::Scanner::scanNextToken() {
             m_tokens.emplace_back(TokenKind::EQUALS, position);
             return;
         }
-        if (ch == '"') {
+        if (ch == '"' || ch == '\'') {
+            const char quoteMarker = ch;
             std::string image;
             optCh = nextChar();
             while (optCh.has_value()) {
                 ch = optCh.value();
-                if (ch == '"') {
+                if (ch == quoteMarker) {
                     m_tokens.emplace_back(TokenKind::STRING_LITERAL, image, position);
                     return;
+                }
+                if (ch == '\\') {
+                    if (const auto esc = scanEscapeSequence(); esc.has_value()) {
+                        ch = *esc;
+                    }
                 }
                 image += ch;
                 optCh = nextChar();
@@ -283,8 +311,14 @@ inline void Argon::Scanner::scanNextToken() {
 
             ch = optCh.value();
             if (ch == ' ' || ch == '[' || ch == ']' || ch == '=') break;
+            if (ch == '\\') {
+                if (const auto esc = scanEscapeSequence(); esc.has_value()) {
+                    ch = *esc;
+                }
+            }
 
-            image += nextChar().value();
+            image += ch;
+            nextChar();
         }
         m_tokens.emplace_back(TokenKind::IDENTIFIER, image, position);
         return;

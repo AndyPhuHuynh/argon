@@ -19,3 +19,7 @@ target_include_directories(custom_error_msg PRIVATE ${PROJECT_SOURCE_DIR}/includ
 add_executable(multiple_inputs multiple_inputs.cpp)
 target_link_libraries(multiple_inputs PRIVATE Argon)
 target_include_directories(multiple_inputs PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(example_testing test.cpp)
+target_link_libraries(example_testing PRIVATE Argon)
+target_include_directories(example_testing PRIVATE ${PROJECT_SOURCE_DIR}/include)

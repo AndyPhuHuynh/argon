@@ -278,7 +278,16 @@ inline auto Parser::printErrors() const -> void {
 inline auto Parser::parse(const int argc, const char **argv) -> bool {
     std::string input;
     for (int i = 1; i < argc; i++) {
-        input += argv[i];
+        const bool containsWhitespace = detail::containsWhitespace(argv[i]);
+        if (containsWhitespace) input += "\"";
+        const size_t size = std::strlen(argv[i]);
+        for (size_t j = 0; j < size; j++) {
+            if (argv[i][j] == '"' || argv[i][j] == '\\') {
+                input += '\\';
+            }
+            input += argv[i][j];
+        }
+        if (containsWhitespace) input += "\"";
         input += " ";
     }
     return parse(input);
