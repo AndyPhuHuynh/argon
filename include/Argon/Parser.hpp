@@ -1,6 +1,7 @@
 #ifndef ARGON_PARSER_INCLUDE
 #define ARGON_PARSER_INCLUDE
 
+#include <cstring>
 #include <memory>
 #include <string>
 #include <variant>
@@ -76,7 +77,7 @@ namespace Argon {
 
         auto printErrors() const -> void;
 
-        auto parse(int argc, const char **argv) -> bool;
+        auto parse(int argc, const char **argv, size_t startIndex = 1) -> bool;
 
         auto parse(std::string_view str) -> bool;
 
@@ -275,9 +276,9 @@ inline auto Parser::printErrors() const -> void {
     }
 }
 
-inline auto Parser::parse(const int argc, const char **argv) -> bool {
+inline auto Parser::parse(const int argc, const char **argv, const size_t startIndex) -> bool {
     std::string input;
-    for (int i = 1; i < argc; i++) {
+    for (size_t i = startIndex; i < static_cast<size_t>(argc); i++) {
         const bool containsWhitespace = detail::containsWhitespace(argv[i]);
         if (containsWhitespace) input += "\"";
         const size_t size = std::strlen(argv[i]);

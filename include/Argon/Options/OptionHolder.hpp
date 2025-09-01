@@ -17,14 +17,20 @@ public:
     OptionHolder() = default;
 
     explicit OptionHolder(IOption& opt) : m_externalOption(&opt) {
-        if (!dynamic_cast<OptionType *>(&opt)) {
-            throw std::runtime_error("OptionHolder was given an incorrect type");
+        using decayed = std::decay_t<OptionType>;
+        if constexpr (!std::is_same_v<decayed, IOption>) {
+            if (!dynamic_cast<OptionType *>(&opt)) {
+                throw std::runtime_error("OptionHolder was given an incorrect type");
+            }
         }
     }
 
     explicit OptionHolder(IOption&& opt) : m_ownedOption(opt.clone()) {
-        if (!dynamic_cast<OptionType *>(&opt)) {
-            throw std::runtime_error("OptionHolder was given an incorrect type");
+        using decayed = std::decay_t<OptionType>;
+        if constexpr (!std::is_same_v<decayed, IOption>) {
+            if (!dynamic_cast<OptionType *>(&opt)) {
+                throw std::runtime_error("OptionHolder was given an incorrect type");
+            }
         }
     }
 

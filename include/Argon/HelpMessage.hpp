@@ -270,7 +270,9 @@ inline auto HelpMessage::appendIOption(size_t leadingSpaces, const IOption *opti
     leadingSpaces += m_nameIndent;
     const size_t nameLen = appendName(leadingSpaces, option);
     const size_t inputHintLen = appendInputHint(leadingSpaces + nameLen, nameLen, option);
-    appendDescription(leadingSpaces, option, nameLen, inputHintLen, groupPath);
+    if (!option->getDescription().empty()) {
+        appendDescription(leadingSpaces, option, nameLen, inputHintLen, groupPath);
+    }
 }
 
 }

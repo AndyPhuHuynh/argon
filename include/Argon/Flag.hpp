@@ -180,6 +180,30 @@ inline auto isAlias(const FlagPathWithAlias& flagPath1, const FlagPathWithAlias&
     return isAlias(flagPath1.flag, flagPath2.flag);
 }
 
+inline auto containsInvalidFlagCharacters(const std::string_view str) -> std::optional<char> {
+    if (str.contains(' '))  return ' ';
+    if (str.contains('\t')) return '\t';
+    if (str.contains('\n')) return '\n';
+    if (str.contains('\r')) return '\r';
+    if (str.contains('\'')) return '\'';
+    if (str.contains('"'))  return '"';
+    if (str.contains('='))  return '=';
+    return std::nullopt;
+}
+
+inline auto getStringReprForInvalidChar(const char c) -> std::string {
+    switch (c) {
+        case ' ':  return "space";
+        case '\t': return "tab";
+        case '\n': return "newline";
+        case '\r': return "carriage return";
+        case '\'': return "single quote";
+        case '\"': return "double quote";
+        case '=':  return "=";
+        default:   return "unknown";
+    }
+}
+
 } // End namespace Argon
 
 //---------------------------------------------------Implementations----------------------------------------------------
@@ -285,7 +309,12 @@ inline auto IFlag::getFlag() const -> const Flag& {
 template<typename Derived>
 auto HasFlag<Derived>::applySetFlag(std::string_view flag) -> void {
     if (flag.empty()) {
-        throw std::invalid_argument("Flag has to be at least one character long");
+        throw std::invalid_argument("Argon Error: Flag has to be at least one character long");
+    }
+    if (const auto invalidChar = containsInvalidFlagCharacters(flag); invalidChar.has_value()) {
+        throw std::invalid_argument(
+            std::format("Argon Error: Flag cannot contain the following invalid character: {}",
+            getStringReprForInvalidChar(*invalidChar)));
     }
     if (m_flag.mainFlag.empty()) {
         m_flag.mainFlag = flag;
@@ -297,7 +326,7 @@ auto HasFlag<Derived>::applySetFlag(std::string_view flag) -> void {
 template<typename Derived>
 auto HasFlag<Derived>::applySetFlag(const std::initializer_list<std::string_view> flags) -> void {
     if (flags.size() <= 0) {
-        throw std::invalid_argument("Operator [] expects at least one flag");
+        throw std::invalid_argument("Argon Error: Operator [] expects at least one flag");
     }
     for (const auto& flag : flags) {
         applySetFlag(flag);

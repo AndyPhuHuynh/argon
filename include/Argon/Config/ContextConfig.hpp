@@ -5,6 +5,7 @@
 #include <string_view>
 #include <typeindex>
 
+#include "Argon/Flag.hpp"
 #include "Argon/Config/Types.hpp"
 #include "Argon/Traits.hpp"
 
@@ -138,6 +139,13 @@ inline auto ContextConfig::getFlagPrefixes() const -> const std::vector<std::str
 }
 
 inline auto ContextConfig::setFlagPrefixes(const std::initializer_list<std::string_view> prefixes) {
+    for (const auto prefix: prefixes) {
+        if (const auto invalidChar = containsInvalidFlagCharacters(prefix); invalidChar.has_value()) {
+            throw std::invalid_argument(
+                std::format("Argon Error: Flag prefix cannot contain the following invalid character: {}",
+                getStringReprForInvalidChar(*invalidChar)));
+        }
+    }
     m_flagPrefixes.assign(prefixes.begin(), prefixes.end());
 }
 

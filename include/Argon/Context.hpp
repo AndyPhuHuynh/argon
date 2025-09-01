@@ -155,9 +155,10 @@ namespace Argon {
 
 template<typename T> requires detail::DerivesFrom<T, IOption>
 auto Context::addOption(T&& option) -> void {
-    if (dynamic_cast<IsPositional *>(&option)) {
+    using U = std::decay_t<T>;
+    if (std::is_base_of_v<IsPositional, U>) {
         m_positionals.emplace_back(std::forward<T>(option));
-    } else if (dynamic_cast<OptionGroup *>(&option)) {
+    } else if (std::is_base_of_v<OptionGroup, U>) {
         m_groups.emplace_back(std::forward<T>(option));
     } else {
         m_options.emplace_back(std::forward<T>(option));
