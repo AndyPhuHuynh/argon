@@ -1,7 +1,6 @@
 #ifndef ARGON_POSITIONAL_INCLUDE
 #define ARGON_POSITIONAL_INCLUDE
 
-#include "Argon/Options/OptionCharBase.hpp"
 #include "Argon/Options/OptionComponent.hpp"
 #include "Argon/Options/SetValue.hpp"
 

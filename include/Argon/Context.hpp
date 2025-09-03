@@ -10,13 +10,18 @@
 #include "Argon/Config/ContextConfigForwarder.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Flag.hpp"
+#include "Argon/Options/IsMultiPositional.hpp"
+#include "Argon/Options/OptionHolder.hpp"
 #include "Argon/Traits.hpp"
+#include "Options/MultiPositional.hpp"
+
 
 namespace Argon {
     class IOption;
     class OptionGroup;
     template <typename OptionType> class OptionHolder;
     class IsPositional;
+    class IsMultiPositional;
 
     using OptionMap = std::unordered_map<FlagPathWithAlias, const IOption*>;
 
@@ -24,6 +29,7 @@ namespace Argon {
         std::vector<OptionHolder<IOption>> m_options;
         std::vector<OptionHolder<OptionGroup>> m_groups;
         std::vector<OptionHolder<IOption>> m_positionals;
+        OptionHolder<IsMultiPositional> m_multiPositional;
     public:
         ContextConfig config = ContextConfig(true);
 
@@ -80,6 +86,8 @@ namespace Argon {
 
         [[nodiscard]] auto getPositionals() const -> const std::vector<OptionHolder<IOption>>&;
 
+        [[nodiscard]] auto getMultiPositional() -> OptionHolder<IsMultiPositional>&;
+
         [[nodiscard]] auto collectAllFlagsRecursive() const -> std::vector<FlagPathWithAlias>;
 
         auto validateSetup(ErrorGroup& errorGroup) const -> void;
@@ -110,7 +118,6 @@ namespace Argon {
 
 #include "Argon/Options/Option.hpp"
 #include "Argon/Options/OptionGroup.hpp"
-#include "Argon/Options/OptionHolder.hpp"
 #include "Argon/Options/MultiOption.hpp"
 #include "Argon/Options/Positional.hpp"
 
@@ -151,21 +158,21 @@ inline auto resolveAllChildContextConfigs(Context *context) -> void { // NOLINT 
 
 //---------------------------------------------------Implementations----------------------------------------------------
 
-namespace Argon {
-
-template<typename T> requires detail::DerivesFrom<T, IOption>
-auto Context::addOption(T&& option) -> void {
+template<typename T> requires Argon::detail::DerivesFrom<T, Argon::IOption>
+auto Argon::Context::addOption(T&& option) -> void {
     using U = std::decay_t<T>;
-    if (std::is_base_of_v<IsPositional, U>) {
+    if constexpr (std::is_base_of_v<IsPositional, U>) {
         m_positionals.emplace_back(std::forward<T>(option));
-    } else if (std::is_base_of_v<OptionGroup, U>) {
+    } else if constexpr (std::is_base_of_v<OptionGroup, U>) {
         m_groups.emplace_back(std::forward<T>(option));
+    } else if constexpr (std::is_base_of_v<IsMultiPositional, U>) {
+        m_multiPositional = OptionHolder<IsMultiPositional>(std::forward<T>(option));
     } else {
         m_options.emplace_back(std::forward<T>(option));
     }
 }
 
-inline auto Context::getFlagOption(const std::string_view flag) -> IOption * {
+inline auto Argon::Context::getFlagOption(const std::string_view flag) -> IOption * {
     const auto optIt = std::ranges::find_if(m_options, [&flag](const OptionHolder<IOption>& holder) {
         const auto iFlag = detail::getIFlag(holder);
         return iFlag->getFlag().containsFlag(flag);
@@ -178,7 +185,7 @@ inline auto Context::getFlagOption(const std::string_view flag) -> IOption * {
     return groupIt == m_groups.end() ? nullptr : groupIt->getPtr();
 }
 
-inline auto Context::getFlagOption(const FlagPath& flagPath) -> IOption * {
+inline auto Argon::Context::getFlagOption(const FlagPath& flagPath) -> IOption * {
     const auto group = resolveFlagGroup(flagPath);
     if (group == nullptr) {
         return getFlagOption(flagPath.flag);
@@ -186,7 +193,7 @@ inline auto Context::getFlagOption(const FlagPath& flagPath) -> IOption * {
     return group->getOption(flagPath.flag);
 }
 
-inline auto Context::getOptionGroup(std::string_view flag) -> OptionGroup * {
+inline auto Argon::Context::getOptionGroup(std::string_view flag) -> OptionGroup * {
     const auto it = std::ranges::find_if(m_groups, [&flag](const OptionHolder<OptionGroup>& holder) {
         return holder.getRef().getFlag().containsFlag(flag);
     });
@@ -194,7 +201,7 @@ inline auto Context::getOptionGroup(std::string_view flag) -> OptionGroup * {
     return it == m_groups.end() ? nullptr : it->getPtr();
 }
 
-inline auto Context::getOptionGroup(const FlagPath& flagPath) -> OptionGroup * {
+inline auto Argon::Context::getOptionGroup(const FlagPath& flagPath) -> OptionGroup * {
     const auto group = resolveFlagGroup(flagPath);
     if (group == nullptr) {
         return getOptionGroup(flagPath.flag);
@@ -202,7 +209,7 @@ inline auto Context::getOptionGroup(const FlagPath& flagPath) -> OptionGroup * {
     return group->getContext().getOptionGroup(flagPath.flag);
 }
 
-inline auto Context::getPositional(const size_t position) -> IsPositional * {
+inline auto Argon::Context::getPositional(const size_t position) -> IsPositional * {
     if (position >= m_positionals.size()) return nullptr;
     const auto ptr = dynamic_cast<IsPositional *>(m_positionals[position].getPtr());
     assert(ptr != nullptr && "Non positional option found in the positionals list");
@@ -210,12 +217,12 @@ inline auto Context::getPositional(const size_t position) -> IsPositional * {
 }
 
 template <typename T>
-auto Context::getOptionDynamic(const std::string_view flag) -> T * {
+auto Argon::Context::getOptionDynamic(const std::string_view flag) -> T * {
     return dynamic_cast<T*>(getFlagOption(flag));
 }
 
 template<typename ValueType>
-auto Context::getOptionValue(const FlagPath& flagPath) -> const ValueType& {
+auto Argon::Context::getOptionValue(const FlagPath& flagPath) -> const ValueType& {
     const auto group = resolveFlagGroup(flagPath);
     const auto opt = group == nullptr ?
         getOptionDynamic<Option<ValueType>>(flagPath.flag) :
@@ -227,7 +234,7 @@ auto Context::getOptionValue(const FlagPath& flagPath) -> const ValueType& {
 }
 
 template<typename Container>
-auto Context::getMultiValue(const FlagPath& flagPath) -> const Container& {
+auto Argon::Context::getMultiValue(const FlagPath& flagPath) -> const Container& {
     const auto group = resolveFlagGroup(flagPath);
     const auto opt = group == nullptr ?
         getOptionDynamic<MultiOption<Container>>(flagPath.flag) :
@@ -239,7 +246,7 @@ auto Context::getMultiValue(const FlagPath& flagPath) -> const Container& {
 }
 
 template<typename ValueType, size_t Pos>
-auto Context::getPositionalValue() -> const ValueType& {
+auto Argon::Context::getPositionalValue() -> const ValueType& {
     if (Pos >= m_positionals.size()) {
         throw std::invalid_argument(std::format(
             "Max positional is {}, attempted to get position {}",
@@ -253,7 +260,7 @@ auto Context::getPositionalValue() -> const ValueType& {
 }
 
 template<typename ValueType, size_t Pos>
-auto Context::getPositionalValue(const FlagPath& groupPath) -> const ValueType& {
+auto Argon::Context::getPositionalValue(const FlagPath& groupPath) -> const ValueType& {
     const auto group = getOptionGroup(groupPath);
     if (group == nullptr) {
         return getPositionalValue<ValueType, Pos>();
@@ -261,50 +268,54 @@ auto Context::getPositionalValue(const FlagPath& groupPath) -> const ValueType& 
     return group->getContext().getPositionalValue<ValueType, Pos>();
 }
 
-inline auto Context::containsLocalFlag(const std::string_view flag) const -> bool {
+inline auto Argon::Context::containsLocalFlag(const std::string_view flag) const -> bool {
     const auto allFlags = collectAllFlags();
     return std::ranges::any_of(allFlags, [&flag](const Flag* flagInList) {
         return flagInList->containsFlag(flag);
     });
 }
 
-inline auto Context::collectAllSetOptions() const -> OptionMap {
+inline auto Argon::Context::collectAllSetOptions() const -> OptionMap {
     OptionMap result;
     collectAllSetOptions(result, std::vector<Flag>());
     return result;
 }
 
-inline auto Context::getOptions() -> std::vector<OptionHolder<IOption>>& {
+inline auto Argon::Context::getOptions() -> std::vector<OptionHolder<IOption>>& {
     return m_options;
 }
 
-inline auto Context::getOptions() const -> const std::vector<OptionHolder<IOption>>& {
+inline auto Argon::Context::getOptions() const -> const std::vector<OptionHolder<IOption>>& {
     return m_options;
 }
 
-inline auto Context::getGroups() -> std::vector<OptionHolder<OptionGroup>>& {
+inline auto Argon::Context::getGroups() -> std::vector<OptionHolder<OptionGroup>>& {
     return m_groups;
 }
 
-inline auto Context::getGroups() const -> const std::vector<OptionHolder<OptionGroup>>& {
+inline auto Argon::Context::getGroups() const -> const std::vector<OptionHolder<OptionGroup>>& {
     return m_groups;
 }
 
-inline auto Context::getPositionals() -> std::vector<OptionHolder<IOption>>& {
+inline auto Argon::Context::getPositionals() -> std::vector<OptionHolder<IOption>>& {
     return m_positionals;
 }
 
-inline auto Context::getPositionals() const -> const std::vector<OptionHolder<IOption>>& {
+inline auto Argon::Context::getPositionals() const -> const std::vector<OptionHolder<IOption>>& {
     return m_positionals;
 }
 
-inline auto Context::collectAllFlagsRecursive() const -> std::vector<FlagPathWithAlias> {
+inline auto Argon::Context::getMultiPositional() -> OptionHolder<IsMultiPositional>& {
+    return m_multiPositional;
+}
+
+inline auto Argon::Context::collectAllFlagsRecursive() const -> std::vector<FlagPathWithAlias> {
     std::vector<FlagPathWithAlias> result;
     collectAllFlagsRecursive(result, std::vector<Flag>());
     return result;
 }
 
-inline auto Context::collectAllFlagsRecursive( // NOLINT (misc-no-recursion)
+inline auto Argon::Context::collectAllFlagsRecursive( // NOLINT (misc-no-recursion)
     std::vector<FlagPathWithAlias>& flags, const std::vector<Flag>& pathSoFar
 ) const -> void {
     for (const auto& holder : m_options) {
@@ -323,7 +334,7 @@ inline auto Context::collectAllFlagsRecursive( // NOLINT (misc-no-recursion)
     }
 }
 
-inline auto Context::collectAllSetOptions(OptionMap& map, //NOLINT (recursion)
+inline auto Argon::Context::collectAllSetOptions(OptionMap& map, //NOLINT (recursion)
                                           const std::vector<Flag>& pathSoFar) const -> void {
     for (const auto& holder : m_options) {
         const IOption *optPtr = holder.getPtr();
@@ -341,19 +352,19 @@ inline auto Context::collectAllSetOptions(OptionMap& map, //NOLINT (recursion)
     }
 }
 
-inline auto Context::validateSetup(ErrorGroup& errorGroup) const -> void {
+inline auto Argon::Context::validateSetup(ErrorGroup& errorGroup) const -> void {
     validateSetup(FlagPath(), errorGroup);
 }
 
-inline auto Context::getConfigImpl() -> ContextConfig& {
+inline auto Argon::Context::getConfigImpl() -> ContextConfig& {
     return config;
 }
 
-inline auto Context::getConfigImpl() const -> const ContextConfig& {
+inline auto Argon::Context::getConfigImpl() const -> const ContextConfig& {
     return config;
 }
 
-inline auto Context::validateSetup( // NOLINT (misc-no-recursion)
+inline auto Argon::Context::validateSetup( // NOLINT (misc-no-recursion)
     const FlagPath& pathSoFar, ErrorGroup& validationErrors
 ) const -> void {
     const auto allFlags = collectAllFlags();
@@ -397,7 +408,7 @@ inline auto Context::validateSetup( // NOLINT (misc-no-recursion)
     }
 }
 
-inline auto Context::checkPrefixes(ErrorGroup& validationErrors, const std::string& groupSoFar) const -> void {
+inline auto Argon::Context::checkPrefixes(ErrorGroup& validationErrors, const std::string& groupSoFar) const -> void {
     auto addErrorNoPrefix = [&](const std::string& flag) {
         if (groupSoFar.empty()) {
             validationErrors.addErrorMessage(
@@ -445,7 +456,7 @@ inline auto Context::checkPrefixes(ErrorGroup& validationErrors, const std::stri
     }
 }
 
-inline auto Context::collectAllFlags() const -> std::vector<const Flag*> {
+inline auto Argon::Context::collectAllFlags() const -> std::vector<const Flag*> {
     std::vector<const Flag*> result;
     for (const auto& holder : m_options) {
         const auto iFlag = detail::getIFlag(holder);
@@ -457,7 +468,7 @@ inline auto Context::collectAllFlags() const -> std::vector<const Flag*> {
     return result;
 }
 
-inline auto Context::resolveFlagGroup(const FlagPath& flagPath) -> OptionGroup * {
+inline auto Argon::Context::resolveFlagGroup(const FlagPath& flagPath) -> OptionGroup * {
     OptionGroup *group = nullptr;
     for (const auto& groupFlag : flagPath.groupPath) {
         auto& groups = group == nullptr ? m_groups : group->getContext().m_groups;
@@ -468,11 +479,9 @@ inline auto Context::resolveFlagGroup(const FlagPath& flagPath) -> OptionGroup *
         if (it == groups.end()) {
             throw InvalidFlagPathException(flagPath);
         }
-        group = dynamic_cast<OptionGroup *>(it->getPtr());
+        group = it->getPtr();
     }
     return group;
 }
-
-} // End namespace Argon
 
 #endif // ARGON_CONTEXT_INCLUDE

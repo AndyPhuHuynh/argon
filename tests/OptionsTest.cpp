@@ -383,9 +383,9 @@ TEST_CASE("Parser getValue basic", "[options][getValue]") {
     const std::string input = "--name John --age 0x14 --gpa 5.5";
     parser.parse(input);
 
-    const auto& name    = parser.getOptionValue<std::string>  ("--name");
-    const auto& age     = parser.getOptionValue<int>          ("--age");
-    const auto& gpa     = parser.getOptionValue<float>        ("--gpa");
+    const auto& name    = parser.getOptionValue<std::string>  (FlagPath{"--name"});
+    const auto& age     = parser.getOptionValue<int>          (FlagPath{"--age"});
+    const auto& gpa     = parser.getOptionValue<float>        (FlagPath{"--gpa"});
 
     CHECK(name          == "John");
     CHECK(age           == 20);
@@ -410,7 +410,7 @@ TEST_CASE("Parser getValue nested", "[options][getValue][option-group]") {
     const std::string input = "--one 1 --g1 [--two 2 --g2 [--three 3 --g3 [--four 4]]]";
     parser.parse(input);
 
-    const auto& one      = parser.getOptionValue<std::string>("--one");
+    const auto& one      = parser.getOptionValue<std::string>(FlagPath{"--one"});
     const auto& two      = parser.getOptionValue<std::string>({"--g1", "--two"});
     const auto& three    = parser.getOptionValue<std::string>({"--g1", "--g2", "--three"});
     const auto& four     = parser.getOptionValue<std::string>({"--g1", "--g2", "--g3", "--four"});
@@ -495,9 +495,9 @@ TEST_CASE("Option default values", "[options][default-value]") {
                 | Option(5.5f)["-f"]
                 | Option<std::string>("hello world!")["-s"];
 
-    const int   i = parser.getOptionValue<int>("-i");
-    const float f = parser.getOptionValue<float>("-f");
-    const auto  s = parser.getOptionValue<std::string>("-s");
+    const int   i = parser.getOptionValue<int>(FlagPath{"-i"});
+    const float f = parser.getOptionValue<float>(FlagPath{"-f"});
+    const auto  s = parser.getOptionValue<std::string>(FlagPath{"-s"});
 
     CHECK(!parser.hasErrors());
     CHECK(i == 5);
@@ -785,9 +785,9 @@ TEST_CASE("Positional getValue rvalue", "[options][positional][getValue]") {
         CHECK(parser.getPositionalValue<float, 2>()         == Catch::Approx(30.5).epsilon(1e-6));
         CHECK(parser.getPositionalValue<double, 3>()        == Catch::Approx(40.5).epsilon(1e-6));
         CHECK(parser.getPositionalValue<std::string, 4>()   == "Hello!");
-        CHECK(parser.getOptionValue<int>("--integer")       == 10);
-        CHECK(parser.getOptionValue<float>("--float")       == 2.5);
-        CHECK(parser.getOptionValue<double>("--double")     == 2.5);
+        CHECK(parser.getOptionValue<int>(FlagPath{"--integer"}) == 10);
+        CHECK(parser.getOptionValue<float>(FlagPath{"--float"}) == 2.5);
+        CHECK(parser.getOptionValue<double>(FlagPath{"--double"})     == 2.5);
     }
 }
 
@@ -862,7 +862,7 @@ TEST_CASE("Positional getValue with groups", "[option-group][positional][getValu
                 );
     parser.parse("--num 10 20 --group [b 30 --nested [c Hello!] 40.5]");
     CHECK(!parser.hasErrors());
-    CHECK(parser.getOptionValue<char>("--num")                                          == 10);
+    CHECK(parser.getOptionValue<char>(FlagPath{"--num"})                                == 10);
     CHECK(parser.getPositionalValue<int, 0>()                                           == 20);
     CHECK(parser.getPositionalValue<char, 0>("--group")                                 == 'b');
     CHECK(parser.getPositionalValue<int,  1>("--group")                                 == 30);
@@ -1067,9 +1067,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 50);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 50);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
     }
 
     SECTION("Before flags dash at start") {
@@ -1079,9 +1079,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "Positional1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "Positional2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "Positional3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 50);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 50);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
     }
 
     SECTION("Before flags dash at end") {
@@ -1091,9 +1091,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Option1");
-        CHECK(parser.getOptionValue<int>("--option2")           == 10);
-        CHECK(parser.getOptionValue<bool>("--option3")          == true);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Option1");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 10);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == true);
     }
 
     SECTION("Positional policy after flags") {
@@ -1103,9 +1103,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 50);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 50);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
     }
 
     SECTION("After flags dash at start") {
@@ -1115,9 +1115,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Option1");
-        CHECK(parser.getOptionValue<int>("--option2")           == 10);
-        CHECK(parser.getOptionValue<bool>("--option3")          == true);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Option1");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 10);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == true);
     }
 
     SECTION("After flags dash at end") {
@@ -1127,9 +1127,9 @@ TEST_CASE("Double dash", "[positionals][double-dash]") {
         CHECK(parser.getPositionalValue<std::string, 0>() == "Positional1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "Positional2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "Positional3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 50);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 50);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
     }
 }
 
@@ -1175,9 +1175,9 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 20);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 20);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
 
         CHECK(parser.getPositionalValue<std::string, 0>("--group1") == "--option1");
         CHECK(parser.getPositionalValue<std::string, 1>("--group1") == "--group2");
@@ -1208,9 +1208,9 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         CHECK(parser.getPositionalValue<std::string, 0>() == "--opt1");
         CHECK(parser.getPositionalValue<std::string, 1>() == "--opt2");
         CHECK(parser.getPositionalValue<std::string, 2>() == "--opt3");
-        CHECK(parser.getOptionValue<std::string>("--option1")   == "Hello");
-        CHECK(parser.getOptionValue<int>("--option2")           == 20);
-        CHECK(parser.getOptionValue<bool>("--option3")          == false);
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
+        CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 20);
+        CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
 
         CHECK(parser.getPositionalValue<std::string, 0>("--group1") == "--option1");
         CHECK(parser.getPositionalValue<std::string, 1>("--group1") == "--group2");

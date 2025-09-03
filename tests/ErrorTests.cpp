@@ -881,9 +881,9 @@ TEST_CASE("Positional policy with parser config", "[positional][errors]") {
         parser.parse("100 200 --name1 John --address [300 400 --street Jam] --name2 Sammy --school [History English "
                      "--teachers [Mr.Smith Mrs.Smith --classroom1 10 --classroom2 20] --homeroom 026] --name3 Joshua");
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<std::string>("--name1") == "John");
-        CHECK(parser.getOptionValue<std::string>("--name2") == "Sammy");
-        CHECK(parser.getOptionValue<std::string>("--name3") == "Joshua");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name1"}) == "John");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name2"}) == "Sammy");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name3"}) == "Joshua");
         CHECK(parser.getPositionalValue<int, 0>() == 100);
         CHECK(parser.getPositionalValue<int, 1>() == 200);
 
@@ -950,9 +950,9 @@ TEST_CASE("Positional policy with parser config", "[positional][errors]") {
         parser.parse("--name1 John --name2 Sammy --name3 Joshua --school [--homeroom 26 --teachers [--classroom1 10 "
                      "--classroom2 20 Mr.Smith Mrs.Smith] History English] --address [--street Jam 300 400] 100 200");
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<std::string>("--name1") == "John");
-        CHECK(parser.getOptionValue<std::string>("--name2") == "Sammy");
-        CHECK(parser.getOptionValue<std::string>("--name3") == "Joshua");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name1"}) == "John");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name2"}) == "Sammy");
+        CHECK(parser.getOptionValue<std::string>(FlagPath{"--name3"}) == "Joshua");
         CHECK(parser.getPositionalValue<int, 0>() == 100);
         CHECK(parser.getPositionalValue<int, 1>() == 200);
 
@@ -1055,14 +1055,14 @@ TEST_CASE("Custom typename", "[typename][custom-type]") {
     SECTION("Valid parsing") {
         parser.parse("--struct hello --union hello --class hello --enum hello --enum-class hello --enum-struct hello");
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<custom_struct>("--struct").a    == 10);
-        CHECK(parser.getOptionValue<custom_struct>("--struct").b    == 20);
-        CHECK(parser.getOptionValue<custom_union>("--union").a      == 10);
-        CHECK(parser.getOptionValue<custom_class>("--class").a      == 10);
-        CHECK(parser.getOptionValue<custom_class>("--class").b      == 20);
-        CHECK(parser.getOptionValue<custom_enum>("--enum")          == ENUM2);
-        CHECK(parser.getOptionValue<custom_enum_class>("--enum-class")   == custom_enum_class::ENUM2);
-        CHECK(parser.getOptionValue<custom_enum_struct>("--enum-struct") == custom_enum_struct::ENUM2);
+        CHECK(parser.getOptionValue<custom_struct>(FlagPath{"--struct"}).a    == 10);
+        CHECK(parser.getOptionValue<custom_struct>(FlagPath{"--struct"}).b == 20);
+        CHECK(parser.getOptionValue<custom_union>(FlagPath{"--union"}).a      == 10);
+        CHECK(parser.getOptionValue<custom_class>(FlagPath{"--class"}).a == 10);
+        CHECK(parser.getOptionValue<custom_class>(FlagPath{"--class"}).b == 20);
+        CHECK(parser.getOptionValue<custom_enum>(FlagPath{"--enum"}) == ENUM2);
+        CHECK(parser.getOptionValue<custom_enum_class>(FlagPath{"--enum-class"}) == custom_enum_class::ENUM2);
+        CHECK(parser.getOptionValue<custom_enum_struct>(FlagPath{"--enum-struct"}) == custom_enum_struct::ENUM2);
     }
 
     SECTION("Invalid parsing") {

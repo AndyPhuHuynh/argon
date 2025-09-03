@@ -122,8 +122,8 @@ TEST_CASE("Duplicate requirement", "[constraints][requirement][error]") {
         parser.parse("-x 10 -y 20 --group [-x 30 -y 40]");
 
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<int>("-x") == 10);
-        CHECK(parser.getOptionValue<int>("-y") == 20);
+        CHECK(parser.getOptionValue<int>(FlagPath{"-x"}) == 10);
+        CHECK(parser.getOptionValue<int>(FlagPath{"-y"}) == 20);
         CHECK(parser.getOptionValue<int>({"--group", "-x"}) == 30);
         CHECK(parser.getOptionValue<int>({"--group", "-y"}) == 40);
     }
@@ -366,7 +366,7 @@ TEST_CASE("Mutually exclusive options", "[constraints][mutual-exclusion][error]"
         parser.constraints().mutuallyExclusive({"-x"}, {FlagPath{"-y"}});
         parser.parse("-x 10 --group [-y 20]");
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<int>("--xcoord") == 10);
+        CHECK(parser.getOptionValue<int>(FlagPath{"--xcoord"}) == 10);
         CHECK(parser.getOptionValue<int>({"--group", "--ycoord"}) == 20);
     }
 
@@ -387,7 +387,7 @@ TEST_CASE("Mutually exclusive options", "[constraints][mutual-exclusion][error]"
             .mutuallyExclusive({"-y"}, {FlagPath{"-g", "-y"}});
         parser.parse("-x 10 --group [-y 20]");
         CHECK(!parser.hasErrors());
-        CHECK(parser.getOptionValue<int>("--xcoord") == 10);
+        CHECK(parser.getOptionValue<int>(FlagPath{"--xcoord"}) == 10);
         CHECK(parser.getOptionValue<int>({"--group", "--ycoord"}) == 20);
     }
 

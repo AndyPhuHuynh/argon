@@ -94,6 +94,10 @@ public:
     [[nodiscard]] auto getPtr() const -> const OptionType * {
         return dynamic_cast<OptionType *>(m_ownedOption ? m_ownedOption.get() : m_externalOption);
     }
+
+    [[nodiscard]] auto isSet() const -> bool {
+        return m_ownedOption != nullptr || m_externalOption != nullptr;
+    }
 };
 
 } // End namespace Argon

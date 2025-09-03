@@ -67,7 +67,6 @@ namespace Argon {
         explicit PositionalAst(const Token& flagToken);
 
         void analyze(Parser& parser, Context& context) override;
-
         void analyze(Parser& parser, Context& context, size_t position);
     };
 
@@ -281,6 +280,16 @@ inline void Argon::PositionalAst::analyze(Parser&, Context&) {}
 
 inline void Argon::PositionalAst::analyze(Parser& parser, Context& context, const size_t position) {
     if (const auto maxSize = context.getPositionals().size(); position >= maxSize) {
+        if (auto multiPosHolder = context.getMultiPositional(); multiPosHolder.isSet()) {
+            IsMultiPositional *opt = multiPosHolder.getPtr();
+            auto *setValue = dynamic_cast<ISetValue *>(opt);
+            const auto *iOption = dynamic_cast<IOption *>(opt);
+            setValue->setValue(context.config, iOption->getInputHint(), value.value);
+            if (iOption->hasError()) {
+                parser.addAnalysisError(iOption->getError(), value.pos, ErrorType::Analysis_ConversionError);
+            }
+            return;
+        }
         if (m_parent == nullptr) {
             parser.addAnalysisError(
                 std::format(R"(Too many positional arguments: "{}" was parsed as positional argument #{}, but a max of )"

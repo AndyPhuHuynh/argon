@@ -12,7 +12,9 @@ struct JpegOptions {
 int main(const int argc, const char **argv) {
     int x, y, z;
     std::string title = "No title provided";
-    JpegOptions options;
+    JpegOptions options{};
+
+    auto multi = MultiPositional<std::vector<int>>().withMax(2);
 
     auto parser =
         Option(&x)[{"--xcoord", "-x"}]("X coordinate")
@@ -22,8 +24,9 @@ int main(const int argc, const char **argv) {
         | (
             OptionGroup()["--jpeg-parser"]("[Jpeg-Options]", "Options to specify for jpeg parsing")
             + Option(&options.useDefaultHuffmanTables)["--use-default-huffman"]
-        );
-
+        )
+        | Positional<int>()("Positional-name", "Description")
+        | multi;
     parser.constraints()
         .require({"-x"}).require({"-y"}).require({"-z"});
 
@@ -36,4 +39,7 @@ int main(const int argc, const char **argv) {
     std::cout << std::format("Title: {}\n", title);
     std::cout << std::format("JpegOptions:\n");
     std::cout << std::format("    UseDefaultHuffman: {}\n", options.useDefaultHuffmanTables);
+    for (const auto& str : multi.getValue()) {
+        std::cout << str << '\n';
+    }
 }

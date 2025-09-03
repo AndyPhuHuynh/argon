@@ -83,11 +83,11 @@ namespace Argon {
         template<typename T> requires detail::DerivesFrom<T, IOption>
         auto operator|(T&& option) -> Parser&;
 
-        template<typename ValueType>
-        auto getOptionValue(std::string_view flag) -> const ValueType&;
-
-        template<typename ValueType>
-        auto getOptionValue(std::initializer_list<std::string_view> flagPath) -> const ValueType&;
+        // template<typename ValueType>
+        // auto getOptionValue(std::string_view flag) -> const ValueType&;
+        //
+        // template<typename ValueType>
+        // auto getOptionValue(std::initializer_list<std::string_view> flagPath) -> const ValueType&;
 
         template<typename ValueType>
         auto getOptionValue(const FlagPath& flagPath) -> const ValueType&;
@@ -571,15 +571,15 @@ auto Parser::operator|(T&& option) -> Parser& {
     return *this;
 }
 
-template<typename ValueType>
-auto Parser::getOptionValue(const std::string_view flag) -> const ValueType& {
-    return m_context->getOptionValue<ValueType>(FlagPath(flag));
-}
-
-template<typename ValueType>
-auto Parser::getOptionValue(const std::initializer_list<std::string_view> flagPath) -> const ValueType& {
-    return m_context->getOptionValue<ValueType>(flagPath);
-}
+// template<typename ValueType>
+// auto Parser::getOptionValue(const std::string_view flag) -> const ValueType& {
+//     return m_context->getOptionValue<ValueType>(FlagPath(flag));
+// }
+//
+// template<typename ValueType>
+// auto Parser::getOptionValue(const std::initializer_list<std::string_view> flagPath) -> const ValueType& {
+//     return m_context->getOptionValue<ValueType>(flagPath);
+// }
 
 template<typename ValueType>
 auto Parser::getOptionValue(const FlagPath& flagPath) -> const ValueType& {

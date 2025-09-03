@@ -72,24 +72,24 @@ namespace Argon {
         auto setValue(const ContextConfig& parserConfig, std::string_view flag, std::string_view value) -> void override;
     };
 
-    // MultiOptionVectorBase
+    // OptionVectorBase
 
     template <typename Derived, typename T>
-    class MultiOptionVectorBase
-        : public HasFlag<Derived>, public ISetValue,
+    class OptionVectorBase
+        : public ISetValue,
           public OptionComponent<Derived>,
           public IsMultiOption, public Converter<Derived, T> {
     protected:
         std::vector<T> m_values;
         std::vector<T>* m_out = nullptr;
 
-        MultiOptionVectorBase() = default;
+        OptionVectorBase() = default;
 
-        explicit MultiOptionVectorBase(const std::vector<T>& defaultValue);
+        explicit OptionVectorBase(const std::vector<T>& defaultValue);
 
-        explicit MultiOptionVectorBase(std::vector<T> *out);
+        explicit OptionVectorBase(std::vector<T> *out);
 
-        MultiOptionVectorBase(const std::vector<T>& defaultValue, std::vector<T> *out);
+        OptionVectorBase(const std::vector<T>& defaultValue, std::vector<T> *out);
     public:
         auto getValue() const -> const std::vector<T>&;
     protected:
@@ -100,8 +100,9 @@ namespace Argon {
 
     template<typename T>
     class MultiOption<std::vector<T>> final
-            : public MultiOptionVectorBase<MultiOption<std::vector<T>>, T>,
-              public detail::OptionTypeExtensions<MultiOption<std::vector<T>>, T> {
+        : public HasFlag<MultiOption<std::vector<T>>>,
+          public OptionVectorBase<MultiOption<std::vector<T>>, T>,
+          public detail::OptionTypeExtensions<MultiOption<std::vector<T>>, T> {
         using ISetValue::setValue;
     public:
         MultiOption() = default;
@@ -220,18 +221,18 @@ auto MultiOption<std::array<T, N>>::setValue(const ContextConfig& parserConfig, 
     this->m_isSet = true;
 }
 
-// MultiOptionVectorBase
+// OptionVectorBase
 
 template<typename Derived, typename T>
-MultiOptionVectorBase<Derived, T>::MultiOptionVectorBase(const std::vector<T>& defaultValue)
+OptionVectorBase<Derived, T>::OptionVectorBase(const std::vector<T>& defaultValue)
     : m_values(defaultValue) {}
 
 template<typename Derived, typename T>
-MultiOptionVectorBase<Derived, T>::MultiOptionVectorBase(std::vector<T> *out)
+OptionVectorBase<Derived, T>::OptionVectorBase(std::vector<T> *out)
     : m_out(out) {}
 
 template<typename Derived, typename T>
-MultiOptionVectorBase<Derived, T>::MultiOptionVectorBase(const std::vector<T>& defaultValue, std::vector<T> *out)
+OptionVectorBase<Derived, T>::OptionVectorBase(const std::vector<T>& defaultValue, std::vector<T> *out)
     : m_values(defaultValue), m_out(out) {
     if (out != nullptr) {
         *m_out = m_values;
@@ -239,12 +240,12 @@ MultiOptionVectorBase<Derived, T>::MultiOptionVectorBase(const std::vector<T>& d
 }
 
 template<typename Derived, typename T>
-auto MultiOptionVectorBase<Derived, T>::getValue() const -> const std::vector<T>& {
+auto OptionVectorBase<Derived, T>::getValue() const -> const std::vector<T>& {
     return m_values;
 }
 
 template<typename Derived, typename T>
-auto MultiOptionVectorBase<Derived, T>::setValue(
+auto OptionVectorBase<Derived, T>::setValue(
         const IOptionConfig& optionConfig, std::string_view flag, std::string_view value
     ) -> void {
     T temp;
@@ -267,21 +268,21 @@ auto MultiOptionVectorBase<Derived, T>::setValue(
 
 template<typename T>
 MultiOption<std::vector<T>>::MultiOption(const std::vector<T>& defaultValue)
-    : MultiOptionVectorBase<MultiOption, T>(defaultValue) {}
+    : OptionVectorBase<MultiOption, T>(defaultValue) {}
 
 template <typename T>
 MultiOption<std::vector<T>>::MultiOption(std::vector<T>* out)
-    : MultiOptionVectorBase<MultiOption, T>(out) {}
+    : OptionVectorBase<MultiOption, T>(out) {}
 
 template<typename T>
 MultiOption<std::vector<T>>::MultiOption(const std::vector<T>& defaultValue, std::vector<T> *out)
-    : MultiOptionVectorBase<MultiOption, T>(defaultValue, out) {}
+    : OptionVectorBase<MultiOption, T>(defaultValue, out) {}
 
 template <typename T>
 void MultiOption<std::vector<T>>::setValue(const ContextConfig& parserConfig,
     const std::string_view flag, const std::string_view value) {
     OptionConfig<T> optionConfig = detail::getOptionConfig<MultiOption, T>(parserConfig, this);
-    MultiOptionVectorBase<MultiOption, T>::setValue(optionConfig, flag, value);
+    OptionVectorBase<MultiOption, T>::setValue(optionConfig, flag, value);
     this->m_isSet = true;
 }
 
