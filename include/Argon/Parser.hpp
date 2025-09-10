@@ -83,32 +83,14 @@ namespace Argon {
         template<typename T> requires detail::DerivesFrom<T, IOption>
         auto operator|(T&& option) -> Parser&;
 
-        // template<typename ValueType>
-        // auto getOptionValue(std::string_view flag) -> const ValueType&;
-        //
-        // template<typename ValueType>
-        // auto getOptionValue(std::initializer_list<std::string_view> flagPath) -> const ValueType&;
-
         template<typename ValueType>
         auto getOptionValue(const FlagPath& flagPath) -> const ValueType&;
-
-        template<typename Container>
-        auto getMultiValue(std::string_view flag) -> const Container&;
-
-        template<typename Container>
-        auto getMultiValue(std::initializer_list<std::string_view> flagPath) -> const Container&;
 
         template<typename Container>
         auto getMultiValue(const FlagPath& flagPath) -> const Container&;
 
         template <typename ValueType, size_t Pos>
         auto getPositionalValue() const;
-
-        template <typename ValueType, size_t Pos>
-        auto getPositionalValue(std::string_view groupFlag) const;
-
-        template <typename ValueType, size_t Pos>
-        auto getPositionalValue(std::initializer_list<std::string_view> groupPath) const;
 
         template <typename ValueType, size_t Pos>
         auto getPositionalValue(const FlagPath& groupPath) const;
@@ -571,29 +553,9 @@ auto Parser::operator|(T&& option) -> Parser& {
     return *this;
 }
 
-// template<typename ValueType>
-// auto Parser::getOptionValue(const std::string_view flag) -> const ValueType& {
-//     return m_context->getOptionValue<ValueType>(FlagPath(flag));
-// }
-//
-// template<typename ValueType>
-// auto Parser::getOptionValue(const std::initializer_list<std::string_view> flagPath) -> const ValueType& {
-//     return m_context->getOptionValue<ValueType>(flagPath);
-// }
-
 template<typename ValueType>
 auto Parser::getOptionValue(const FlagPath& flagPath) -> const ValueType& {
     return m_context->getOptionValue<ValueType>(flagPath);
-}
-
-template<typename Container>
-auto Parser::getMultiValue(const std::string_view flag) -> const Container& {
-    return m_context->getMultiValue<Container>(FlagPath(flag));
-}
-
-template<typename Container>
-auto Parser::getMultiValue(const std::initializer_list<std::string_view> flagPath) -> const Container& {
-    return m_context->getMultiValue<Container>(flagPath);
 }
 
 template<typename Container>
@@ -604,16 +566,6 @@ auto Parser::getMultiValue(const FlagPath& flagPath) -> const Container& {
 template<typename ValueType, size_t Pos>
 auto Parser::getPositionalValue() const {
     return m_context->getPositionalValue<ValueType, Pos>();
-}
-
-template<typename ValueType, size_t Pos>
-auto Parser::getPositionalValue(const std::string_view groupFlag) const {
-    return m_context->getPositionalValue<ValueType, Pos>(FlagPath(groupFlag));
-}
-
-template<typename ValueType, size_t Pos>
-auto Parser::getPositionalValue(const std::initializer_list<std::string_view> groupPath) const {
-    return m_context->getPositionalValue<ValueType, Pos>(groupPath);
 }
 
 template<typename ValueType, size_t Pos>

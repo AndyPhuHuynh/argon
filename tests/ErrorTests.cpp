@@ -888,12 +888,12 @@ TEST_CASE("Positional policy with parser config", "[positional][errors]") {
         CHECK(parser.getPositionalValue<int, 1>() == 200);
 
         CHECK(parser.getOptionValue<std::string>({"--address", "--street"}) == "Jam");
-        CHECK(parser.getPositionalValue<int, 0>("--address") == 300);
-        CHECK(parser.getPositionalValue<int, 1>("--address") == 400);
+        CHECK(parser.getPositionalValue<int, 0>({"--address"}) == 300);
+        CHECK(parser.getPositionalValue<int, 1>({"--address"}) == 400);
 
         CHECK(parser.getOptionValue<int>({"--school", "--homeroom"}) == 26);
-        CHECK(parser.getPositionalValue<std::string, 0>("--school") == "History");
-        CHECK(parser.getPositionalValue<std::string, 1>("--school") == "English");
+        CHECK(parser.getPositionalValue<std::string, 0>({"--school"}) == "History");
+        CHECK(parser.getPositionalValue<std::string, 1>({"--school"}) == "English");
 
         CHECK(parser.getOptionValue<int>({"--school", "--teachers", "--classroom1"}) == 10);
         CHECK(parser.getOptionValue<int>({"--school", "--teachers", "--classroom2"}) == 20);
@@ -957,12 +957,12 @@ TEST_CASE("Positional policy with parser config", "[positional][errors]") {
         CHECK(parser.getPositionalValue<int, 1>() == 200);
 
         CHECK(parser.getOptionValue<std::string>({"--address", "--street"}) == "Jam");
-        CHECK(parser.getPositionalValue<int, 0>("--address") == 300);
-        CHECK(parser.getPositionalValue<int, 1>("--address") == 400);
+        CHECK(parser.getPositionalValue<int, 0>({"--address"}) == 300);
+        CHECK(parser.getPositionalValue<int, 1>({"--address"}) == 400);
 
         CHECK(parser.getOptionValue<int>({"--school", "--homeroom"}) == 26);
-        CHECK(parser.getPositionalValue<std::string, 0>("--school") == "History");
-        CHECK(parser.getPositionalValue<std::string, 1>("--school") == "English");
+        CHECK(parser.getPositionalValue<std::string, 0>({"--school"}) == "History");
+        CHECK(parser.getPositionalValue<std::string, 1>({"--school"}) == "English");
 
         CHECK(parser.getOptionValue<int>({"--school", "--teachers", "--classroom1"}) == 10);
         CHECK(parser.getOptionValue<int>({"--school", "--teachers", "--classroom2"}) == 20);

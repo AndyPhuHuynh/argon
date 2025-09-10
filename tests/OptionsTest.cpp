@@ -430,8 +430,8 @@ TEST_CASE("Parser getValue multioption", "[options][multi][getValue]") {
     const std::string input = "--ints 1 2 3 --floats 1.5 2.5 3.5";
     parser.parse(input);
 
-    const auto& ints = parser.getMultiValue<std::array<int, 3>>("--ints");
-    const auto& floats = parser.getMultiValue<std::vector<float>>("--floats");
+    const auto& ints = parser.getMultiValue<std::array<int, 3>>(FlagPath{"--ints"});
+    const auto& floats = parser.getMultiValue<std::vector<float>>(FlagPath{"--floats"});
 
     CHECK(!parser.hasErrors());
 
@@ -464,7 +464,7 @@ TEST_CASE("Parser getValue multioption nested", "[options][multi][getValue][opti
     const std::string input = "--one 1 10 100 1000 --g1 [--two 2.0 2.2 2.3 --g2 [--three 1.5 2.5 --g3 [--four 4.5 5.5 6.5 7.5 8.5]]]";
     parser.parse(input);
 
-    const auto& one     = parser.getMultiValue<std::array<int, 4>>      ("--one");
+    const auto& one     = parser.getMultiValue<std::array<int, 4>>      (FlagPath{"--one"});
     const auto& two     = parser.getMultiValue<std::array<float ,3>>    (FlagPath{"--g1", "--two"});
     const auto& three   = parser.getMultiValue<std::vector<float>>      (FlagPath{"--g1", "--g2", "--three"});
     const auto& four    = parser.getMultiValue<std::vector<float>>      (FlagPath{"--g1", "--g2", "--g3", "--four"});
@@ -509,8 +509,8 @@ TEST_CASE("Multioption default values") {
     auto parser = MultiOption<std::array<int, 2>>({1, 2})["--array"]
                 | MultiOption<std::vector<int>>({1, 2, 3, 4})["--vector"];
 
-    const auto& array  = parser.getMultiValue<std::array<int, 2>>("--array");
-    const auto& vector = parser.getMultiValue<std::vector<int>>("--vector");
+    const auto& array  = parser.getMultiValue<std::array<int, 2>>(FlagPath{"--array"});
+    const auto& vector = parser.getMultiValue<std::vector<int>>(FlagPath{"--vector"});
 
     SECTION("Nothing set") {
         CHECK(!parser.hasErrors());
@@ -864,11 +864,11 @@ TEST_CASE("Positional getValue with groups", "[option-group][positional][getValu
     CHECK(!parser.hasErrors());
     CHECK(parser.getOptionValue<char>(FlagPath{"--num"})                                == 10);
     CHECK(parser.getPositionalValue<int, 0>()                                           == 20);
-    CHECK(parser.getPositionalValue<char, 0>("--group")                                 == 'b');
-    CHECK(parser.getPositionalValue<int,  1>("--group")                                 == 30);
-    CHECK(parser.getPositionalValue<float,  2>("--group")                               == Catch::Approx(40.5).epsilon(1e-6));
-    CHECK(parser.getPositionalValue<char, 0>(FlagPath{"--group", "--nested"})           == 'c');
-    CHECK(parser.getPositionalValue<std::string, 1>(FlagPath{"--group", "--nested"})    == "Hello!");
+    CHECK(parser.getPositionalValue<char, 0>({"--group"})                               == 'b');
+    CHECK(parser.getPositionalValue<int,  1>({"--group"})                               == 30);
+    CHECK(parser.getPositionalValue<float,  2>({"--group"})                             == Catch::Approx(40.5).epsilon(1e-6));
+    CHECK(parser.getPositionalValue<char, 0>({"--group", "--nested"})           == 'c');
+    CHECK(parser.getPositionalValue<std::string, 1>({"--group", "--nested"})    == "Hello!");
 }
 
 TEST_CASE("Ascii CharMode", "[options][char]") {
@@ -1179,8 +1179,8 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 20);
         CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
 
-        CHECK(parser.getPositionalValue<std::string, 0>("--group1") == "--option1");
-        CHECK(parser.getPositionalValue<std::string, 1>("--group1") == "--group2");
+        CHECK(parser.getPositionalValue<std::string, 0>({"--group1"}) == "--option1");
+        CHECK(parser.getPositionalValue<std::string, 1>({"--group1"}) == "--group2");
         CHECK(parser.getOptionValue<std::string>({"--group1", "--option1"}) == "inside group1!");
         CHECK(parser.getOptionValue<int>({"--group1", "--option2"})         == 20);
         CHECK(parser.getOptionValue<bool>({"--group1", "--option3"})        == true);
@@ -1212,8 +1212,8 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 20);
         CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
 
-        CHECK(parser.getPositionalValue<std::string, 0>("--group1") == "--option1");
-        CHECK(parser.getPositionalValue<std::string, 1>("--group1") == "--group2");
+        CHECK(parser.getPositionalValue<std::string, 0>({"--group1"}) == "--option1");
+        CHECK(parser.getPositionalValue<std::string, 1>({"--group1"}) == "--group2");
         CHECK(parser.getOptionValue<std::string>({"--group1", "--option1"}) == "inside group1!");
         CHECK(parser.getOptionValue<int>({"--group1", "--option2"})         == 20);
         CHECK(parser.getOptionValue<bool>({"--group1", "--option3"})        == true);
