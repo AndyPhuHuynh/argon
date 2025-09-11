@@ -34,12 +34,12 @@ int main(const int argc, const char **argv) {
         parser.printErrors();
         return 0;
     };
-    std::cout << "---------------------------------\n";
-    std::cout << std::format("X: {}, Y: {}, Z: {}\n", x, y, z);
-    std::cout << std::format("Title: {}\n", title);
-    std::cout << std::format("JpegOptions:\n");
-    std::cout << std::format("    UseDefaultHuffman: {}\n", options.useDefaultHuffmanTables);
-    for (const auto& str : multi.getValue()) {
-        std::cout << str << '\n';
-    }
+    // std::cout << "---------------------------------\n";
+    // std::cout << std::format("X: {}, Y: {}, Z: {}\n", x, y, z);
+    // std::cout << std::format("Title: {}\n", title);
+    // std::cout << std::format("JpegOptions:\n");
+    // std::cout << std::format("    UseDefaultHuffman: {}\n", options.useDefaultHuffmanTables);
+    // for (const auto& str : multi.getValue()) {
+    //     std::cout << str << '\n';
+    // }
 }

@@ -1178,7 +1178,7 @@ TEST_CASE("Double dash with groups", "[positionals][double-dash][option-group]")
         CHECK(parser.getOptionValue<std::string>(FlagPath{"--option1"}) == "Hello");
         CHECK(parser.getOptionValue<int>(FlagPath{"--option2"}) == 20);
         CHECK(parser.getOptionValue<bool>(FlagPath{"--option3"}) == false);
-
+        
         CHECK(parser.getPositionalValue<std::string, 0>({"--group1"}) == "--option1");
         CHECK(parser.getPositionalValue<std::string, 1>({"--group1"}) == "--group2");
         CHECK(parser.getOptionValue<std::string>({"--group1", "--option1"}) == "inside group1!");

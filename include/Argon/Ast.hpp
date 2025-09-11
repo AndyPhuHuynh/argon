@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-#include "Config/ContextConfig.hpp"
-#include "Scanner.hpp"
+#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Scanner.hpp"
 
 namespace Argon {
     class Context;
@@ -362,6 +362,7 @@ inline void Argon::OptionGroupAst::checkPositionals(Parser& parser, Context& con
 }
 
 inline void Argon::OptionGroupAst::analyze(Parser& parser, Context& context) {
+    parser.addAnalysisErrorGroup(flag.value, flag.pos, endPos);
     IOption *iOption = context.getFlagOption(flag.value);
     if (!iOption) {
         parser.removeErrorGroup(flag.pos);

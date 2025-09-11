@@ -347,7 +347,8 @@ inline auto Argon::ErrorGroup::toString() const -> std::string {
                         return;
                     }
                     stream << "\n";
-                    stream << std::format("{}In group '{}':\n", prefix, e->getGroupName());
+                    stream << std::format(R"({}In group "{}":)", prefix, e->getGroupName());
+                    stream << "\n";
                     printRecursiveRef(stream, *e, prefix + "    ", printRecursiveRef);
                     if (i < errors.size() - 1) {
                         stream << "\n";

@@ -4,7 +4,6 @@
 #include <cstring>
 #include <memory>
 #include <string>
-#include <variant>
 
 #include "Argon/Config/ContextConfig.hpp"
 #include "Argon/Error.hpp"
@@ -103,34 +102,7 @@ namespace Argon {
 
     private:
         auto copyFrom(const Parser& other) -> void;
-
         auto reset() -> void;
-
-        auto parseStatement() -> StatementAst;
-
-        auto parseOptionBundle(const Ast& parentAst, Context& context, const std::optional<Token>& doubleDashToken) ->
-            std::variant<std::monostate, std::unique_ptr<OptionBaseAst>, std::unique_ptr<PositionalAst>>;
-
-        auto parseSingleOption(const Ast& parentAst, Context& context, const Token& flag, const std::optional<Token>& doubleDashToken) -> std::unique_ptr<OptionAst>;
-
-        auto parseMultiOption(const Context& context, const Token& flag) -> std::unique_ptr<MultiOptionAst>;
-
-        auto parseGroupContents(OptionGroupAst& optionGroupAst, Context& nextContext) -> void;
-
-        auto parseOptionGroup(const Ast& parentAst, Context& context, const Token& flag, const std::optional<Token>& doubleDashToken) -> std::unique_ptr<OptionGroupAst>;
-
-        auto getNextValidFlag(const Ast& parentAst, const Context& context, bool printErrors,
-            const std::optional<Token>& doubleDashToken) -> std::variant<std::monostate, Token, std::unique_ptr<PositionalAst>>;
-
-        auto skipToNextValidFlag(const Ast& parentAst, const Context& context, const std::optional<Token>& doubleDashToken) -> void;
-
-        auto getNextToken() -> Token;
-
-        auto rewindScanner(uint32_t rewindAmount) -> void;
-
-        auto skipScope() -> void;
-
-        auto getDoubleDashInScope(std::string_view groupName) -> std::optional<Token>;
     };
 
     template<typename Left, typename Right> requires detail::DerivesFrom<Left, IOption> && detail::DerivesFrom<Right, IOption>
@@ -140,15 +112,9 @@ namespace Argon {
 //---------------------------------------------------Free Functions----------------------------------------------------
 
 #include "Argon/Ast.hpp"
+#include "Argon/AstBuilder.hpp"
 #include "Argon/Constraints.hpp"
 #include "Argon/HelpMessage.hpp"
-#include "Argon/Options/MultiOption.hpp"
-
-namespace Argon::detail {
-inline auto isValue(const Token& token) {
-    return token.kind == TokenKind::IDENTIFIER || token.kind == TokenKind::STRING_LITERAL;
-}
-} // End namespace Argon::detail
 
 // --------------------------------------------- Implementations -------------------------------------------------------
 
@@ -282,7 +248,10 @@ inline auto Parser::parse(const std::string_view str) -> bool {
     }
 
     m_scanner = Scanner(str);
-    StatementAst ast = parseStatement();
+    auto astBuilder = detail::AstBuilder();
+    auto ast = astBuilder.parse(*m_context, str);
+    m_syntaxErrors = astBuilder.getErrorsAsGroup();
+
     ast.checkPositionals(*this, *m_context);
     if (m_syntaxErrors.hasErrors()) {
         return false;
@@ -291,260 +260,6 @@ inline auto Parser::parse(const std::string_view str) -> bool {
 
     m_constraints->validate(*m_context, m_constraintErrors);
     return !hasErrors();
-}
-
-inline auto Parser::parseStatement() -> StatementAst {
-    StatementAst statement;
-    const auto doubleDash = getDoubleDashInScope("");
-    while (!m_scanner.seeTokenKind(TokenKind::END)) {
-        // Handle rbrack that gets leftover after SkipScope
-        if (m_scanner.seeTokenKind(TokenKind::RBRACK)) {
-            getNextToken();
-            continue;
-        }
-        auto parsed = parseOptionBundle(statement, *m_context, doubleDash);
-        std::visit([&statement]<typename T>(T& opt) {
-            if constexpr (std::is_same_v<T, std::monostate>) {}
-            else {statement.addOption(std::move(opt));}
-        }, parsed);
-    }
-    return statement;
-}
-
-inline auto Parser::parseOptionBundle(const Ast& parentAst, Context& context, const std::optional<Token>& doubleDashToken) -> // NOLINT(misc-no-recursion)
-    std::variant<std::monostate, std::unique_ptr<OptionBaseAst>, std::unique_ptr<PositionalAst>> {
-    auto var = getNextValidFlag(parentAst, context, true, doubleDashToken);
-    if (std::holds_alternative<std::monostate>(var)) { return std::monostate{}; }
-    if (std::holds_alternative<Token>(var)) {
-        const auto& flagToken = std::get<Token>(var);
-
-        IOption *iOption = context.getFlagOption(flagToken.image);
-        if (dynamic_cast<IsSingleOption *>(iOption)) {
-            return parseSingleOption(parentAst, context, flagToken, doubleDashToken);
-        }
-        if (dynamic_cast<IsMultiOption *>(iOption)) {
-            return parseMultiOption(context, flagToken);
-        }
-        if (dynamic_cast<OptionGroup *>(iOption)) {
-            return parseOptionGroup(parentAst, context, flagToken, doubleDashToken);
-        }
-
-        return std::monostate{};
-    }
-    if (std::holds_alternative<std::unique_ptr<PositionalAst>>(var)) {
-        return std::move(std::get<std::unique_ptr<PositionalAst>>(var));
-    }
-    return std::monostate{};
-}
-
-inline auto Parser::parseSingleOption(const Ast& parentAst, Context& context, const Token& flag, const std::optional<Token>& doubleDashToken)
-    -> std::unique_ptr<OptionAst> {
-    Token value = m_scanner.peekToken();
-
-    // Boolean flag with no explicit value
-    if (const bool nextTokenIsAnotherFlag = value.kind == TokenKind::IDENTIFIER && context.containsLocalFlag(value.image);
-        context.getOptionDynamic<Option<bool>>(flag.image) && (!value.isOneOf({TokenKind::IDENTIFIER, TokenKind::EQUALS}) || nextTokenIsAnotherFlag)) {
-        return std::make_unique<OptionAst>(flag, Token(TokenKind::IDENTIFIER, "true", flag.position));
-    }
-
-    // Get optional equal sign
-    if (value.kind == TokenKind::EQUALS) {
-        getNextToken();
-        value = m_scanner.peekToken();
-    }
-
-    // Get value
-    if (!detail::isValue(value)) {
-        m_syntaxErrors.addErrorMessage(
-            std::format("Expected flag value, got '{}' at position {}", value.image, value.position),
-            value.position, ErrorType::Syntax_MissingValue);
-        skipToNextValidFlag(parentAst, context, doubleDashToken);
-        return nullptr;
-    }
-
-    // If value matches a flag (no value supplied)
-    if (context.containsLocalFlag(value.image)) {
-        if (&context == &*m_context) {
-            m_syntaxErrors.addErrorMessage(
-                std::format("No value provided for flag '{}' at position {}", flag.image, flag.position),
-                value.position, ErrorType::Syntax_MissingValue
-            );
-        } else {
-            m_syntaxErrors.addErrorMessage(
-                std::format("No value provided for flag '{}' inside group '{}' at position {}", flag.image,
-                            parentAst.getGroupPath(), flag.position),
-                value.position, ErrorType::Syntax_MissingValue
-            );
-        }
-        return nullptr;
-    }
-
-    getNextToken();
-    return std::make_unique<OptionAst>(flag, value);
-}
-
-inline auto Parser::parseMultiOption(const Context& context,
-                                     const Token& flag) -> std::unique_ptr<MultiOptionAst> {
-    auto multiOptionAst = std::make_unique<MultiOptionAst>(flag);
-
-    while (true) {
-        Token nextToken = m_scanner.peekToken();
-
-        const bool endOfMultiOption = !detail::isValue(nextToken) || context.containsLocalFlag(nextToken.image);
-        if (endOfMultiOption) {
-            return multiOptionAst;
-        }
-
-        multiOptionAst->addValue(nextToken);
-        getNextToken();
-    }
-}
-
-inline auto Parser::parseGroupContents(OptionGroupAst& optionGroupAst, Context& nextContext) -> void { //NOLINT (misc-no-recursion)
-    const auto doubleDash = getDoubleDashInScope(optionGroupAst.getGroupPath());
-    while (true) {
-        const Token nextToken = m_scanner.peekToken();
-
-        if (nextToken.kind == TokenKind::RBRACK) {
-            getNextToken();
-            optionGroupAst.endPos = nextToken.position;
-            m_analysisErrors.addErrorGroup(optionGroupAst.flag.value, optionGroupAst.flag.pos, optionGroupAst.endPos);
-            return;
-        }
-
-        if (nextToken.kind == TokenKind::END) {
-            getNextToken();
-            optionGroupAst.endPos = nextToken.position;
-            m_analysisErrors.addErrorGroup(optionGroupAst.flag.value, optionGroupAst.flag.pos, optionGroupAst.endPos);
-            m_syntaxErrors.addErrorMessage(
-                std::format("No matching ']' found for group '{}'", optionGroupAst.flag.value),
-                nextToken.position, ErrorType::Syntax_MissingRightBracket);
-            return;
-        }
-        auto parsed = parseOptionBundle(optionGroupAst, nextContext, doubleDash);
-        std::visit([&optionGroupAst]<typename T>(T& opt) {
-            if constexpr (std::is_same_v<T, std::monostate>) {}
-            else {optionGroupAst.addOption(std::move(opt));}
-        }, parsed);
-    }
-}
-
-inline auto Parser::parseOptionGroup(const Ast& parentAst, Context& context, const Token& flag, const std::optional<Token>& doubleDashToken) -> std::unique_ptr<OptionGroupAst> { //NOLINT (misc-no-recursion)
-    if (const Token lbrack = m_scanner.peekToken(); lbrack.kind != TokenKind::LBRACK) {
-        m_syntaxErrors.addErrorMessage(
-            std::format("Expected '[', got '{}' at position {}", lbrack.image, lbrack.position),
-            lbrack.position, ErrorType::Syntax_MissingLeftBracket);
-        skipToNextValidFlag(parentAst, context, doubleDashToken);
-        return nullptr;
-    }
-    getNextToken();
-
-    const auto optionGroup = context.getOptionDynamic<OptionGroup>(flag.image);
-    auto& nextContext = optionGroup->getContext();
-
-    auto optionGroupAst = std::make_unique<OptionGroupAst>(flag);
-    parseGroupContents(*optionGroupAst, nextContext);
-    return optionGroupAst;
-}
-
-inline auto Parser::getNextValidFlag(
-    const Ast& parentAst, const Context& context, const bool printErrors, const std::optional<Token>& doubleDashToken
-) -> std::variant<std::monostate, Token, std::unique_ptr<PositionalAst>> {
-    Token flag = m_scanner.peekToken();
-
-    if (doubleDashToken.has_value()) {
-        const auto& dash = doubleDashToken.value();
-        if (flag == dash) {
-            m_scanner.getNextToken();
-            return std::monostate{};
-        }
-        switch (context.config.getDefaultPositionalPolicy()) {
-            case PositionalPolicy::UseDefault:
-                throw std::runtime_error("Internal Argon error: PositionalPolicy::UseDefault encountered in getNextValidFlag");
-            case PositionalPolicy::BeforeFlags:
-                if (flag.position < dash.position) {
-                    getNextToken();
-                    return std::make_unique<PositionalAst>(flag);
-                }
-                break;
-            case PositionalPolicy::Interleaved:
-            case PositionalPolicy::AfterFlags:
-                if (flag.position > dash.position) {
-                    getNextToken();
-                    return std::make_unique<PositionalAst>(flag);
-                }
-                break;
-        }
-    }
-
-    const bool isIdentifier     = flag.kind == TokenKind::IDENTIFIER;
-    const bool hasFlagPrefix    = detail::startsWithAny(flag.image, context.config.getFlagPrefixes());
-    const bool inContext        = context.containsLocalFlag(flag.image);
-    const bool isPositional     = (flag.kind == TokenKind::IDENTIFIER && !hasFlagPrefix) || flag.kind == TokenKind::STRING_LITERAL;
-
-    // Is a positional arg
-    if (isPositional) {
-        getNextToken();
-        return std::make_unique<PositionalAst>(flag);
-    }
-
-    // Is a valid flag in the context
-    if (isIdentifier && inContext) {
-        getNextToken();
-        return flag;
-    }
-
-    if (printErrors && !isIdentifier) {
-        m_syntaxErrors.addErrorMessage(
-            std::format("Expected flag name, got '{}' at position {}", flag.image, flag.position),
-            flag.position, ErrorType::Syntax_MissingFlagName
-        );
-    } else if (printErrors) {
-        if (&context == &*m_context) {
-            m_syntaxErrors.addErrorMessage(
-                std::format("Unknown flag '{}' at position {}", flag.image, flag.position),
-                flag.position, ErrorType::Syntax_UnknownFlag
-            );
-        } else {
-            m_syntaxErrors.addErrorMessage(
-                std::format("Unknown flag '{}' inside group '{}' at position {}", flag.image, parentAst.getGroupPath(),
-                            flag.position),
-                flag.position, ErrorType::Syntax_UnknownFlag
-            );
-        }
-    }
-
-    if (flag.kind == TokenKind::LBRACK) {
-        skipScope();
-    }
-
-    while (true) {
-        Token token = m_scanner.peekToken();
-        if (token.kind == TokenKind::LBRACK) {
-            skipScope();
-            continue;
-        }
-        if (m_mismatchedRBRACK) {
-            getNextToken();
-            continue;
-        }
-        if (token.kind == TokenKind::RBRACK || token.kind == TokenKind::END) {
-            // Escape this scope, leave RBRACK scanning to the function above
-            return std::monostate{};
-        }
-        if (token.kind == TokenKind::IDENTIFIER && context.containsLocalFlag(token.image)) {
-            getNextToken();
-            return token;
-        }
-        getNextToken();
-    }
-}
-
-inline auto Parser::skipToNextValidFlag(const Ast& parentAst, const Context& context, const std::optional<Token>& doubleDashToken) -> void {
-    getNextValidFlag(parentAst, context, false, doubleDashToken);
-    if (m_scanner.peekToken().kind != TokenKind::END) {
-        rewindScanner(1);
-    }
 }
 
 template <typename T> requires detail::DerivesFrom<T, IOption>
@@ -607,107 +322,6 @@ inline auto Parser::reset() -> void {
     m_analysisErrors.clear();
     m_constraintErrors.clear();
     m_brackets.clear();
-}
-
-inline auto Parser::getNextToken() -> Token {
-    m_mismatchedRBRACK = false;
-    const Token nextToken = m_scanner.getNextToken();
-    if (nextToken.kind == TokenKind::LBRACK) {
-        m_brackets.push_back(nextToken);
-    } else if (nextToken.kind == TokenKind::RBRACK) {
-        if (m_brackets.empty()) {
-            m_mismatchedRBRACK = true;
-            m_syntaxErrors.addErrorMessage(
-                std::format("No matching '[' found for ']' at position {}", nextToken.position),
-                nextToken.position, ErrorType::Syntax_MissingLeftBracket
-            );
-        } else {
-            m_poppedBrackets.push_back(m_brackets.back());
-            m_brackets.pop_back();
-        }
-    }
-    return nextToken;
-}
-
-inline auto Parser::rewindScanner(const uint32_t rewindAmount) -> void {
-    for (const auto& token : std::ranges::reverse_view(m_scanner.rewind(rewindAmount))) {
-        if (token.kind == TokenKind::RBRACK && !m_poppedBrackets.empty()) {
-            m_brackets.push_back(m_poppedBrackets.back());
-            m_poppedBrackets.pop_back();
-        }
-    }
-}
-
-inline auto Parser::skipScope() -> void {
-    if (m_scanner.peekToken().kind != TokenKind::LBRACK) return;
-    std::vector<Token> brackets;
-    while (true) {
-        const Token token = getNextToken();
-        if (token.kind == TokenKind::LBRACK) {
-            brackets.push_back(token);
-        } else if (token.kind == TokenKind::RBRACK) {
-            if (brackets.empty()) {
-                m_syntaxErrors.addErrorMessage(
-                    std::format("Unmatched ']' found at position {}", token.position),
-                    token.position, ErrorType::Syntax_MissingLeftBracket);
-                return;
-            }
-            brackets.pop_back();
-        }
-
-        if (token.kind == TokenKind::END && !brackets.empty()) {
-            for (const auto& bracket: brackets) {
-                m_syntaxErrors.addErrorMessage(
-                    std::format("Unmatched '[' found at position {}", bracket.position),
-                    bracket.position, ErrorType::Syntax_MissingRightBracket);
-            }
-            return;
-        }
-
-        if (brackets.empty()) {
-            return;
-        }
-    }
-}
-
-inline auto Parser::getDoubleDashInScope(const std::string_view groupName) -> std::optional<Token> {
-    int bracketLayer = 0;
-    uint32_t tokenCount = 0;
-    Token nextToken;
-    Token doubleDash;
-    bool foundDoubleDash = false;
-    do {
-        nextToken = m_scanner.getNextToken();
-        tokenCount++;
-        if (nextToken.kind == TokenKind::LBRACK) {
-            bracketLayer++;
-        } else if (nextToken.kind == TokenKind::RBRACK) {
-            if (bracketLayer == 0) {
-                break;
-            }
-            bracketLayer--;
-        } else if (nextToken.kind == TokenKind::DOUBLE_DASH && bracketLayer == 0) {
-            if (foundDoubleDash) {
-                if (groupName.empty()) {
-                    m_syntaxErrors.addErrorMessage("Multiple double dashes found at the root level",
-                        nextToken.position, ErrorType::Syntax_MultipleDoubleDash);
-                } else {
-                    m_syntaxErrors.addErrorMessage(
-                        std::format(R"(Multiple double dashes found within group "{}")", groupName),
-                        nextToken.position, ErrorType::Syntax_MultipleDoubleDash);
-                }
-                m_scanner.rewind(tokenCount);
-                return doubleDash;
-            }
-            doubleDash = nextToken;
-            foundDoubleDash = true;
-        }
-    } while (nextToken.kind != TokenKind::END);
-    m_scanner.rewind(tokenCount);
-    if (foundDoubleDash) {
-        return {doubleDash};
-    }
-    return std::nullopt;
 }
 
 template<typename Left, typename Right> requires
