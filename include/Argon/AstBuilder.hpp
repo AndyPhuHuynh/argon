@@ -9,7 +9,7 @@ namespace Argon::detail {
     class AstBuilder {
         Scanner m_scanner;
         Context *m_rootContext = nullptr;
-        ErrorGroup m_syntaxErrors = ErrorGroup("Syntax Errors", -1, -1);
+        ErrorGroup& m_syntaxErrors;
 
         std::vector<Token> m_brackets;
         std::vector<Token> m_poppedBrackets;
@@ -17,10 +17,10 @@ namespace Argon::detail {
 
         std::vector<std::optional<Token>> m_doubleDashes;
     public:
-        AstBuilder() = default;
+        explicit AstBuilder(ErrorGroup& syntaxErrors);
 
-        [[nodiscard]] auto getErrorsAsGroup() const -> const ErrorGroup&;
-        [[nodiscard]] auto getErrorsAsString() const -> std::string;
+        [[nodiscard]] auto hasScannerErrors() const -> bool;
+        [[nodiscard]] auto getScannerErrors() const -> const std::vector<std::string>&;
         auto parse(Context& rootContext, std::string_view input) -> StatementAst;
     private:
         auto parseStatement(Context& context) -> StatementAst;
@@ -49,12 +49,14 @@ namespace Argon::detail {
 
 // --------------------------------------------- Implementations -------------------------------------------------------
 
-inline auto Argon::detail::AstBuilder::getErrorsAsGroup() const -> const ErrorGroup& {
-    return m_syntaxErrors;
+inline Argon::detail::AstBuilder::AstBuilder(ErrorGroup& syntaxErrors) : m_syntaxErrors(syntaxErrors) {}
+
+inline auto Argon::detail::AstBuilder::hasScannerErrors() const -> bool {
+    return m_scanner.hasErrors();
 }
 
-inline auto Argon::detail::AstBuilder::getErrorsAsString() const -> std::string {
-    return m_syntaxErrors.toString();
+inline auto Argon::detail::AstBuilder::getScannerErrors() const -> const std::vector<std::string>& {
+    return m_scanner.getErrors();
 }
 
 inline auto Argon::detail::AstBuilder::parse(Context& rootContext, const std::string_view input) -> StatementAst {

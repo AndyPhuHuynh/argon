@@ -25,17 +25,14 @@ namespace Argon {
     class Constraints;
 
     class Parser {
-        std::unique_ptr<Context> m_context = std::make_unique<Context>(false);
+        // TODO: Remove scanner
         Scanner m_scanner;
+        std::unique_ptr<Context> m_context = std::make_unique<Context>(false);
 
         ErrorGroup m_validationErrors = ErrorGroup("Validation Errors", -1, -1);
         ErrorGroup m_syntaxErrors = ErrorGroup("Syntax Errors", -1, -1);
         ErrorGroup m_analysisErrors = ErrorGroup("Analysis Errors", -1, -1);
         ErrorGroup m_constraintErrors = ErrorGroup("Constraint Errors", -1, -1);
-
-        std::vector<Token> m_brackets;
-        std::vector<Token> m_poppedBrackets;
-        bool m_mismatchedRBRACK = false;
 
         std::unique_ptr<Constraints> m_constraints;
     public:
@@ -247,16 +244,14 @@ inline auto Parser::parse(const std::string_view str) -> bool {
         return false;
     }
 
-    m_scanner = Scanner(str);
-    auto astBuilder = detail::AstBuilder();
+    auto astBuilder = detail::AstBuilder(m_syntaxErrors);
     auto ast = astBuilder.parse(*m_context, str);
-    m_syntaxErrors = astBuilder.getErrorsAsGroup();
 
-    ast.checkPositionals(*this, *m_context);
+    ast.checkPositionals(*m_context, m_syntaxErrors);
     if (m_syntaxErrors.hasErrors()) {
         return false;
     }
-    ast.analyze(*this, *m_context);
+    ast.analyze(*m_context, m_analysisErrors);
 
     m_constraints->validate(*m_context, m_constraintErrors);
     return !hasErrors();
@@ -302,16 +297,11 @@ inline auto Parser::constraints() const -> Constraints& {
 
 inline auto Parser::copyFrom(const Parser& other) -> void {
     m_context = std::make_unique<Context>(*other.m_context);
-    m_scanner = other.m_scanner;
 
     m_validationErrors          = other.m_validationErrors;
     m_syntaxErrors              = other.m_syntaxErrors;
     m_analysisErrors            = other.m_analysisErrors;
     m_constraintErrors          = other.m_constraintErrors;
-
-    m_brackets                  = other.m_brackets;
-    m_poppedBrackets            = other.m_poppedBrackets;
-    m_mismatchedRBRACK          = other.m_mismatchedRBRACK;
 
     m_constraints = std::make_unique<Constraints>(*other.m_constraints);
 }
@@ -321,7 +311,6 @@ inline auto Parser::reset() -> void {
     m_syntaxErrors.clear();
     m_analysisErrors.clear();
     m_constraintErrors.clear();
-    m_brackets.clear();
 }
 
 template<typename Left, typename Right> requires
