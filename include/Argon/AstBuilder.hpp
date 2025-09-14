@@ -7,8 +7,8 @@
 
 namespace Argon::detail {
     class AstBuilder {
-        Scanner m_scanner;
         Context *m_rootContext = nullptr;
+        Scanner& m_scanner;
         ErrorGroup& m_syntaxErrors;
 
         std::vector<Token> m_brackets;
@@ -17,11 +17,11 @@ namespace Argon::detail {
 
         std::vector<std::optional<Token>> m_doubleDashes;
     public:
-        explicit AstBuilder(ErrorGroup& syntaxErrors);
+        explicit AstBuilder(Scanner& scanner, ErrorGroup& syntaxErrors);
 
         [[nodiscard]] auto hasScannerErrors() const -> bool;
         [[nodiscard]] auto getScannerErrors() const -> const std::vector<std::string>&;
-        auto parse(Context& rootContext, std::string_view input) -> StatementAst;
+        auto parse(Context& rootContext) -> StatementAst;
     private:
         auto parseStatement(Context& context) -> StatementAst;
         auto parseOptionBundle(Context& context, const Ast& parentAst)
@@ -45,11 +45,10 @@ namespace Argon::detail {
     }
 }
 
-
-
 // --------------------------------------------- Implementations -------------------------------------------------------
 
-inline Argon::detail::AstBuilder::AstBuilder(ErrorGroup& syntaxErrors) : m_syntaxErrors(syntaxErrors) {}
+inline Argon::detail::AstBuilder::AstBuilder(Scanner& scanner, ErrorGroup& syntaxErrors)
+    : m_scanner(scanner), m_syntaxErrors(syntaxErrors) {}
 
 inline auto Argon::detail::AstBuilder::hasScannerErrors() const -> bool {
     return m_scanner.hasErrors();
@@ -59,8 +58,7 @@ inline auto Argon::detail::AstBuilder::getScannerErrors() const -> const std::ve
     return m_scanner.getErrors();
 }
 
-inline auto Argon::detail::AstBuilder::parse(Context& rootContext, const std::string_view input) -> StatementAst {
-    m_scanner = Scanner(input);
+inline auto Argon::detail::AstBuilder::parse(Context& rootContext) -> StatementAst {
     m_rootContext = &rootContext;
     return parseStatement(rootContext);
 }

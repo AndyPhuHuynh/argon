@@ -244,8 +244,9 @@ inline auto Parser::parse(const std::string_view str) -> bool {
         return false;
     }
 
-    auto astBuilder = detail::AstBuilder(m_syntaxErrors);
-    auto ast = astBuilder.parse(*m_context, str);
+    m_scanner = Scanner(str);
+    auto astBuilder = detail::AstBuilder(m_scanner, m_syntaxErrors);
+    auto ast = astBuilder.parse(*m_context);
 
     ast.checkPositionals(*m_context, m_syntaxErrors);
     if (m_syntaxErrors.hasErrors()) {

@@ -23,3 +23,7 @@ target_include_directories(multiple_inputs PRIVATE ${PROJECT_SOURCE_DIR}/include
 add_executable(example_testing test.cpp)
 target_link_libraries(example_testing PRIVATE Argon)
 target_include_directories(example_testing PRIVATE ${PROJECT_SOURCE_DIR}/include)
+
+add_executable(subcommand_testing subcommands_test.cpp)
+target_link_libraries(subcommand_testing PRIVATE Argon)
+target_include_directories(subcommand_testing PRIVATE ${PROJECT_SOURCE_DIR}/include)

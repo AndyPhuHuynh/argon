@@ -42,7 +42,7 @@ namespace Argon {
         Context(Context&&) noexcept = default;
         auto operator=(Context&&) noexcept -> Context& = default;
 
-        template <typename T> requires detail::DerivesFrom<T, IOption>
+        template <typename T> requires Argon::detail::DerivesFrom<T, Argon::IOption>
         auto addOption(T&& option) -> void;
 
         [[nodiscard]] auto getFlagOption(std::string_view flag) -> IOption *;
@@ -71,6 +71,12 @@ namespace Argon {
 
         template <typename ValueType, size_t Pos>
         [[nodiscard]] auto getPositionalValue(const FlagPath& groupPath) -> const ValueType&;
+
+        template <typename ContainerType>
+        [[nodiscard]] auto getMultiPositionalValue() -> const ContainerType&;
+
+        template <typename ContainerType>
+        [[nodiscard]] auto getMultiPositionalValue(const FlagPath& groupPath) -> const ContainerType&;
 
         [[nodiscard]] auto collectAllSetOptions() const -> OptionMap;
 
@@ -266,6 +272,24 @@ auto Argon::Context::getPositionalValue(const FlagPath& groupPath) -> const Valu
         return getPositionalValue<ValueType, Pos>();
     }
     return group->getContext().getPositionalValue<ValueType, Pos>();
+}
+
+template<typename ContainerType>
+auto Argon::Context::getMultiPositionalValue() -> const ContainerType& {
+    if (m_multiPositional.getPtr() == nullptr) {
+        throw std::invalid_argument(
+            std::format("Attempted to get multi-positional, however multi-positional does not exist in context"));
+    }
+    return dynamic_cast<MultiPositional<ContainerType> *>(m_multiPositional.getPtr())->getValue();
+}
+
+template<typename ContainerType>
+auto Argon::Context::getMultiPositionalValue(const FlagPath& groupPath) -> const ContainerType& {
+    const auto group = getOptionGroup(groupPath);
+    if (group == nullptr) {
+        return getMultiPositionalValue<ContainerType>();
+    }
+    return group->getContext().getMultiPositionalValue<ContainerType>();
 }
 
 inline auto Argon::Context::containsLocalFlag(const std::string_view flag) const -> bool {

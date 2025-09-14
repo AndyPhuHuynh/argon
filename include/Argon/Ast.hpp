@@ -12,6 +12,7 @@
 namespace Argon {
     class Context;
     class Parser;
+    class OptionGroupAst;
 
     struct Value {
         std::string value;
@@ -124,7 +125,6 @@ namespace Argon {
 
 #include "Context.hpp"
 #include "Options/Option.hpp"
-#include "Parser.hpp" // NOLINT (unused include)
 #include "Options/MultiOption.hpp"
 
 namespace Argon {
