@@ -26,12 +26,14 @@ public:
     auto buildCli() -> Argon::CliLayer override {
         return Argon::CliLayer{
             Argon::Subcommands{
+                Region{},
                 Region{}
             },
             Argon::DefaultCommand{
                 Argon::Option(&x)["-x"],
                 Argon::Option(&y)["-y"],
-                Argon::Option(&z)["-z"]
+                Argon::Option(&z)["-z"],
+                Argon::OptionGroup()["--group"]
             }.withMain([&](Argon::ContextView) {
                 std::cout << "Inside of coordinates subcommand!\n";
                 std::cout << "X: " << x << std::endl;
@@ -43,30 +45,27 @@ public:
 };
 
 int main() {
-    auto cmd = Argon::DefaultCommand{
-        Argon::Option<int>()[{"-x"}],
-        Argon::Option<int>()[{"-y"}]
-    }.withMain([](Argon::ContextView view) {
-        std::cout << "Inside default command main\n";
-        std::cout << "X: " << view.get<int>({"-x"}) << "\n";
-        std::cout << "Y: " << view.get<int>({"-y"}) << "\n";
-    });
-
-    const auto layer = Argon::CliLayer{
+    auto layer = Argon::Cli{
         Argon::Subcommands{
-            Coordinates{}
+            Coordinates{},
         },
         Argon::DefaultCommand{
             Argon::Option<int>()[{"-x"}],
-            Argon::Option<int>()[{"-y"}]
+            Argon::Option<int>()[{"-y"}],
+            Argon::Option<int>()[{"-z"}]
         }.withMain([](Argon::ContextView view) {
             std::cout << "Inside default command main\n";
             std::cout << "X: " << view.get<int>({"-x"}) << "\n";
             std::cout << "Y: " << view.get<int>({"-y"}) << "\n";
+            std::cout << "Z: " << view.get<int>({"-z"}) << "\n";
         })
     };
+    layer.run("coordinates region --country USA");
 
-    Argon::CliErrors errors;
-    Argon::Scanner scanner{"coordinates region --country USA"};
-    layer.run(scanner, errors);
+    if (layer.hasErrors()) {
+        const auto& [validationErrors, syntaxErrors, analysisErrors] = layer.getErrors();
+        validationErrors.printErrors();
+        syntaxErrors.printErrors();
+        analysisErrors.printErrors();
+    }
 }

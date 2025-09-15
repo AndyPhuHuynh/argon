@@ -5,6 +5,8 @@
 #include <string_view>
 
 #include "Argon/Cli/CliErrors.hpp"
+#include "Argon/Cli/SubcommandPath.hpp"
+#include "Argon/Error.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -22,6 +24,9 @@ namespace Argon {
 
         virtual ~ISubcommand() = default;
         [[nodiscard]] auto getName() const -> std::string_view { return m_name; }
+
+        auto getCliLayer() -> CliLayer&;
+        auto validate(SubcommandPath& path, ErrorGroup& validationErrors);
         auto run(Scanner& scanner, CliErrors& errors) -> void;
 
     protected:
@@ -29,11 +34,21 @@ namespace Argon {
     };
 }
 
-inline auto Argon::ISubcommand::run(Scanner& scanner, CliErrors& errors) -> void {
+inline auto Argon::ISubcommand::getCliLayer() -> CliLayer& {
     if (!m_layer.has_value()) {
         m_layer = std::make_unique<CliLayer>(std::move(buildCli()));
     }
-    m_layer.value()->run(scanner, errors);
+    return *m_layer.value();
+}
+
+inline auto Argon::ISubcommand::validate(SubcommandPath& path, ErrorGroup& validationErrors) {
+    path.push(getName());
+    getCliLayer().validate(path, validationErrors);
+    path.pop();
+}
+
+inline auto Argon::ISubcommand::run(Scanner& scanner, CliErrors& errors) -> void {
+    getCliLayer().run(scanner, errors);
 }
 
 #endif // ARGON_ISUBCOMMAND_HPP

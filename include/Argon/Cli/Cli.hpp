@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Argon/Cli/CliErrors.hpp"
+#include "Argon/Cli/SubcommandPath.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -12,20 +13,52 @@ namespace Argon {
 
     class Cli {
         Scanner m_scanner;
-        std::unique_ptr<CliLayer> m_rootLayer;
         CliErrors m_errors;
+        bool m_isValidated = false;
 
+        std::unique_ptr<CliLayer> m_rootLayer = nullptr;
     public:
+        template <typename... Parts>
+            requires (std::is_rvalue_reference_v<Parts&&> && ...)
+        explicit Cli(Parts&&... parts);
+
+        auto validate() -> void;
+
         auto run(std::string_view input) -> void;
+
+        [[nodiscard]] auto hasErrors() const -> bool;
+
+        [[nodiscard]] auto getErrors() const -> const CliErrors&;
     };
 }
 
 #include "Argon/Cli/CliLayer.hpp"
 #include "Argon/Cli/Subcommands.hpp"
 
+template<typename ... Parts> requires (std::is_rvalue_reference_v<Parts&&> && ...)
+Argon::Cli::Cli(Parts&&... parts) {
+    m_rootLayer = std::make_unique<CliLayer>(std::forward<Parts>(parts)...);
+}
+
+inline auto Argon::Cli::validate() -> void {
+    if (m_isValidated) return;
+    SubcommandPath path;
+    m_rootLayer->validate(path, m_errors.validationErrors);
+    m_isValidated = true;
+}
+
 inline auto Argon::Cli::run(const std::string_view input) -> void {
+    validate();
     m_scanner = Scanner(input);
     m_rootLayer->run(m_scanner, m_errors);
+}
+
+inline auto Argon::Cli::hasErrors() const -> bool {
+    return m_errors.hasErrors();
+}
+
+inline auto Argon::Cli::getErrors() const -> const CliErrors& {
+    return m_errors;
 }
 
 #endif // ARGON_CLI_HPP

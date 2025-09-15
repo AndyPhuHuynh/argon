@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "Argon/Cli/CliErrors.hpp"
+#include "Argon/Error.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -32,6 +33,8 @@ namespace Argon {
         auto withMain(const MainFn& mainFn) & -> DefaultCommand&;
         auto withMain(const MainFn& mainFn) && -> DefaultCommand&&;
 
+        auto validate(ErrorGroup& validationErrors) const -> void;
+
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
     };
 }
@@ -56,6 +59,10 @@ inline auto Argon::DefaultCommand::withMain(const MainFn& mainFn) & -> DefaultCo
 inline auto Argon::DefaultCommand::withMain(const MainFn& mainFn) && -> DefaultCommand&& {
     m_mainFn = mainFn;
     return std::move(*this);
+}
+
+inline auto Argon::DefaultCommand::validate(ErrorGroup& validationErrors) const -> void {
+    m_context->validateSetup(validationErrors);
 }
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {

@@ -17,6 +17,9 @@ namespace Argon {
     enum class ErrorType {
         None = 0,
 
+        Validation_EmptyCliLayer,
+        Validation_DuplicateSubcommandName,
+
         Validation_NoPrefix,
         Validation_DuplicateFlag,
         Validation_EmptyFlag,

@@ -3,6 +3,7 @@
 
 #include <memory>
 
+#include "Argon/Cli/SubcommandPath.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -14,7 +15,6 @@ namespace Argon {
         std::unique_ptr<Subcommands> m_subcommands = nullptr;
         std::unique_ptr<DefaultCommand> m_defaultCommand = nullptr;
     public:
-
         template <typename... Parts>
             requires (std::is_rvalue_reference_v<Parts&&> && ...)
         explicit CliLayer(Parts&&... parts);
@@ -24,11 +24,14 @@ namespace Argon {
         auto withDefaultCommand(DefaultCommand&& defaultCommand) & -> CliLayer&;
         auto withDefaultCommand(DefaultCommand&& defaultCommand) && -> CliLayer&&;
 
+        auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
+
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
 
     private:
         auto addPart(Subcommands&& part);
         auto addPart(DefaultCommand&& part);
+
     };
 }
 
@@ -58,6 +61,24 @@ inline auto Argon::CliLayer::withDefaultCommand(DefaultCommand&& defaultCommand)
 inline auto Argon::CliLayer::withDefaultCommand(DefaultCommand&& defaultCommand) && -> CliLayer&& {
     m_defaultCommand = std::make_unique<DefaultCommand>(std::move(defaultCommand));
     return std::move(*this);
+}
+
+inline auto Argon::CliLayer::validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void {
+    if (m_defaultCommand == nullptr &&
+        (m_subcommands == nullptr || m_subcommands->getCommands().empty())) {
+        validationErrors.addErrorMessage(
+            std::format(
+                R"(In subcommand "{}" "Empty CLiLayer found. )"
+                R"(CliLayer must include either at least one subcommand or a default command.)", path.toString()),
+            -1, ErrorType::Validation_EmptyCliLayer);
+        return;
+        }
+    if (m_subcommands) {
+        m_subcommands->validate(path, validationErrors);
+    }
+    if (m_defaultCommand) {
+        m_defaultCommand->validate(validationErrors);
+    }
 }
 
 inline auto Argon::CliLayer::run(Scanner& scanner, CliErrors& errors) const -> void {
