@@ -30,6 +30,7 @@ namespace Argon {
         auto getCommands() -> std::vector<std::unique_ptr<ISubcommand>>&;
 
         auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
+        auto resolveConfig(const Config *parentConfig) const -> void;
     };
 }
 
@@ -87,6 +88,14 @@ inline auto Argon::Subcommands::validate(SubcommandPath& path, ErrorGroup& valid
 
     for (const auto& subcommand : m_subcommands) {
         subcommand->validate(path, validationErrors);
+    }
+}
+
+inline auto Argon::Subcommands::resolveConfig(const Config *parentConfig) const -> void {
+    for (const auto& subcommand : m_subcommands) {
+        if (subcommand) {
+            subcommand->getCliLayer().resolveConfig(parentConfig);
+        }
     }
 }
 

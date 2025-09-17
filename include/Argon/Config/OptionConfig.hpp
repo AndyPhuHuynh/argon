@@ -27,7 +27,7 @@ struct OptionConfig
     : IOptionConfig,
       std::conditional_t<detail::is_numeric_char_type<T>, detail::OptionConfigChar, detail::EmptyBase<0>>,
       std::conditional_t<detail::is_non_bool_number<T>, detail::OptionConfigIntegral<T>, detail::EmptyBase<1>> {
-    const DefaultConversionFn *conversionFn = nullptr;
+    const ConversionFn<void> *conversionFn = nullptr;
 };
 
 } // End namespace Argon

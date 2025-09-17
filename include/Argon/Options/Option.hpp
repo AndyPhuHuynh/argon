@@ -6,7 +6,7 @@
 #include "Argon/Flag.hpp"
 #include "Argon/Options/OptionComponent.hpp"
 #include "Argon/Options/SetValue.hpp"
-#include "../Config/ContextConfig.hpp"
+#include "../Config/Config.hpp"
 
 namespace Argon {
 class IsSingleOption {};
@@ -28,7 +28,7 @@ public:
 
     Option(T defaultValue, T *out) : SetSingleValueImpl<Option, T>(defaultValue, out) {};
 protected:
-    auto setValue(const ContextConfig& parserConfig, std::string_view flag, std::string_view value) -> void override {
+    auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> void override {
         auto optionConfig = detail::getOptionConfig<Option, T>(parserConfig, this);
         SetSingleValueImpl<Option, T>::setValue(optionConfig, flag, value);
         this->m_error = this->getConversionError();

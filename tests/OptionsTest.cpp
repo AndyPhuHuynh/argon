@@ -196,15 +196,15 @@ auto operator<<(std::ostream &os, const Student &s) -> std::ostream & {
     return os << "Student(name:\"" << s.name << "\", age:" << s.age << ")";
 }
 
-auto studentFromString = [](const std::string_view str, Student& out) -> bool {
+auto studentFromString = [](const std::string_view str, Student *out) -> bool {
     if (str == "1") {
-        out = { .name = "Josh", .age = 1 }; return true;
+        *out = { .name = "Josh", .age = 1 }; return true;
     }
     if (str == "2") {
-        out = { .name = "John", .age = 2 }; return true;
+        *out = { .name = "John", .age = 2 }; return true;
     }
     if (str == "3") {
-        out = { .name = "Sally", .age = 3 }; return true;
+        *out = { .name = "Sally", .age = 3 }; return true;
     }
     return false;
 };

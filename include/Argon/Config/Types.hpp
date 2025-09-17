@@ -9,69 +9,71 @@
 #include "Argon/Traits.hpp"
 
 namespace Argon {
+    template <typename T>
+    using ConversionFn      = std::function<bool(std::string_view, T*)>;
+    using ConversionFnMap   = std::unordered_map<std::type_index, ConversionFn<void>>;
 
-using DefaultConversionFn = std::function<bool(std::string_view, void*)>;
-using DefaultConversions  = std::unordered_map<std::type_index, DefaultConversionFn>;
+    enum class CharMode {
+        UseDefault = 0,
+        ExpectAscii,
+        ExpectInteger,
+    };
 
-enum class CharMode {
-    UseDefault = 0,
-    ExpectAscii,
-    ExpectInteger,
-};
-
-enum class PositionalPolicy {
-    UseDefault = 0,
-    Interleaved,
-    BeforeFlags,
-    AfterFlags,
-};
+    enum class PositionalPolicy {
+        UseDefault = 0,
+        Interleaved,
+        BeforeFlags,
+        AfterFlags,
+    };
 
 } // End namespace Argon
 
 namespace Argon::detail {
 
-struct IntegralBoundsBase {
-    IntegralBoundsBase() = default;
-    virtual ~IntegralBoundsBase() = default;
-    [[nodiscard]] virtual auto clone() const -> std::unique_ptr<IntegralBoundsBase> = 0;
-};
+    struct IntegralBoundsBase {
+        IntegralBoundsBase() = default;
+        virtual ~IntegralBoundsBase() = default;
+        [[nodiscard]] virtual auto clone() const -> std::unique_ptr<IntegralBoundsBase> = 0;
+    };
 
-template <typename T> requires is_non_bool_number<T>
-struct IntegralBounds final : IntegralBoundsBase{
-    T min = std::numeric_limits<T>::lowest();
-    T max = std::numeric_limits<T>::max();
+    template <typename T> requires is_non_bool_number<T>
+    struct IntegralBounds final : IntegralBoundsBase{
+        T min = std::numeric_limits<T>::lowest();
+        T max = std::numeric_limits<T>::max();
 
-    [[nodiscard]] auto clone() const -> std::unique_ptr<IntegralBoundsBase> override;
-};
+        [[nodiscard]] auto clone() const -> std::unique_ptr<IntegralBoundsBase> override;
+    };
 
-class BoundsMap {
-public:
-    std::unordered_map<std::type_index, std::unique_ptr<IntegralBoundsBase>> map;
+    class BoundsMap {
+    public:
+        std::unordered_map<std::type_index, std::unique_ptr<IntegralBoundsBase>> map;
 
-    BoundsMap() = default;
-    BoundsMap(const BoundsMap&);
-    BoundsMap& operator=(const BoundsMap&);
-    BoundsMap(BoundsMap&&) noexcept = default;
-    BoundsMap& operator=(BoundsMap&&) noexcept = default;
-};
+        BoundsMap() = default;
+        BoundsMap(const BoundsMap&);
+        auto operator=(const BoundsMap&) -> BoundsMap&;
+        BoundsMap(BoundsMap&&) noexcept = default;
+        BoundsMap& operator=(BoundsMap&&) noexcept = default;
+    };
+
+    template <typename F>
+    auto addConversionFn(ConversionFnMap& map, F&& fn) -> void;
 
 } // End namespace Argon::detail
 
-namespace Argon::detail {
 
-template<typename T> requires is_non_bool_number<T>
-auto IntegralBounds<T>::clone() const -> std::unique_ptr<IntegralBoundsBase> {
+template<typename T> requires Argon::detail::is_non_bool_number<T>
+auto Argon::detail::IntegralBounds<T>::clone() const -> std::unique_ptr<IntegralBoundsBase> {
     return std::make_unique<IntegralBounds>(*this);
 }
 
 
-inline BoundsMap::BoundsMap(const BoundsMap& other) {
+inline Argon::detail::BoundsMap::BoundsMap(const BoundsMap& other) {
     for (const auto& [typeIndex, bound] : other.map) {
         map[typeIndex] = bound->clone();
     }
 }
 
-inline BoundsMap& BoundsMap::operator=(const BoundsMap& other) {
+inline auto Argon::detail::BoundsMap::operator=(const BoundsMap& other) -> BoundsMap& {
     if (this != &other) {
         for (const auto& [typeIndex, bound] : other.map) {
             map[typeIndex] = bound->clone();
@@ -80,6 +82,16 @@ inline BoundsMap& BoundsMap::operator=(const BoundsMap& other) {
     return *this;
 }
 
-} // End namespace Argon::detail
+template <typename F>
+auto Argon::detail::addConversionFn(ConversionFnMap& map, F&& fn) -> void {
+    using traits = conversion_param<F>;
+    using T = typename traits::T;
+
+    auto wrapper = [fn = std::forward<F>(fn)](std::string_view arg, void *out) -> bool {
+        return fn(arg, static_cast<T*>(out));
+    };
+    map[std::type_index(typeid(T))] = wrapper;
+}
+
 
 #endif // ARGON_CONFIG_TYPES_INCLUDE

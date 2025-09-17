@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "Argon/Cli/CliErrors.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Scanner.hpp"
 
@@ -16,7 +17,8 @@ namespace Argon {
     using MainFn = std::function<void(ContextView)>;
 
     class DefaultCommand {
-        std::unique_ptr<Context> m_context = std::make_unique<Context>(false);
+        std::unique_ptr<Context> m_context = std::make_unique<Context>();
+        Config m_config;
         MainFn m_mainFn = nullptr;
     public:
         DefaultCommand() = default;
@@ -34,7 +36,7 @@ namespace Argon {
         auto withMain(const MainFn& mainFn) && -> DefaultCommand&&;
 
         auto validate(ErrorGroup& validationErrors) const -> void;
-
+        auto resolveConfig(const Config *parentConfig) -> void;
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
     };
 }
@@ -63,6 +65,15 @@ inline auto Argon::DefaultCommand::withMain(const MainFn& mainFn) && -> DefaultC
 
 inline auto Argon::DefaultCommand::validate(ErrorGroup& validationErrors) const -> void {
     m_context->validateSetup(validationErrors);
+}
+
+inline auto Argon::DefaultCommand::resolveConfig(const Config *parentConfig) -> void {
+    if (parentConfig == nullptr) {
+        m_config.resolveUseDefaults();
+    } else {
+        m_config = detail::resolveConfig(*parentConfig, m_config);
+    }
+
 }
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {

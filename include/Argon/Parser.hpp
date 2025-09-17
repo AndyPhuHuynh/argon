@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Flag.hpp"
 #include "Argon/Scanner.hpp"
@@ -27,7 +27,7 @@ namespace Argon {
     class Parser {
         // TODO: Remove scanner
         Scanner m_scanner;
-        std::unique_ptr<Context> m_context = std::make_unique<Context>(false);
+        std::unique_ptr<Context> m_context = std::make_unique<Context>();
 
         ErrorGroup m_validationErrors = ErrorGroup("Validation Errors", -1, -1);
         ErrorGroup m_syntaxErrors = ErrorGroup("Syntax Errors", -1, -1);
@@ -91,9 +91,9 @@ namespace Argon {
         template <typename ValueType, size_t Pos>
         auto getPositionalValue(const FlagPath& groupPath) const;
 
-        auto getConfig() -> ContextConfig&;
+        auto getConfig() -> Config&;
 
-        [[nodiscard]] auto getConfig() const -> const ContextConfig&;
+        [[nodiscard]] auto getConfig() const -> const Config&;
 
         [[nodiscard]] auto constraints() const -> Constraints&;
 
@@ -185,6 +185,7 @@ inline auto Parser::hasErrors() const -> bool {
 }
 
 inline auto Parser::getHelpMessage(const size_t maxLineWidth) const -> std::string {
+    m_context->config.resolveUseDefaults();
     detail::resolveAllChildContextConfigs(m_context.get());
     return detail::HelpMessage(m_context.get(), m_constraints.get(), maxLineWidth).get();
 }
@@ -235,6 +236,7 @@ inline auto Parser::parse(const int argc, const char **argv, const size_t startI
 }
 
 inline auto Parser::parse(const std::string_view str) -> bool {
+    m_context->config.resolveUseDefaults();
     reset();
 
     detail::resolveAllChildContextConfigs(m_context.get());
@@ -284,11 +286,11 @@ auto Parser::getPositionalValue(const FlagPath& groupPath) const {
     return m_context->getPositionalValue<ValueType, Pos>(groupPath);
 }
 
-inline auto Parser::getConfig() -> ContextConfig& {
+inline auto Parser::getConfig() -> Config& {
     return m_context->config;
 }
 
-inline auto Parser::getConfig() const -> const ContextConfig& {
+inline auto Parser::getConfig() const -> const Config& {
     return m_context->config;
 }
 

@@ -1,7 +1,7 @@
 #ifndef ARGON_CONTEXT_CONFIG_FORWARDER_INCLUDE
 #define ARGON_CONTEXT_CONFIG_FORWARDER_INCLUDE
 
-#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Config/Config.hpp"
 
 namespace Argon::detail {
 
@@ -15,8 +15,8 @@ protected:
     ContextConfigForwarder& operator=(ContextConfigForwarder &&) = default;
     virtual ~ContextConfigForwarder() = default;
 
-    [[nodiscard]] virtual auto getConfigImpl() -> ContextConfig& = 0;
-    [[nodiscard]] virtual auto getConfigImpl() const -> const ContextConfig& = 0;
+    [[nodiscard]] virtual auto getConfigImpl() -> Config& = 0;
+    [[nodiscard]] virtual auto getConfigImpl() const -> const Config& = 0;
 public:
     [[nodiscard]] auto getDefaultCharMode() const -> CharMode {
         return getConfigImpl().getDefaultCharMode();
@@ -46,7 +46,7 @@ public:
         return static_cast<Derived&&>(*this);
     }
 
-    [[nodiscard]] auto getDefaultConversions() const -> const DefaultConversions& {
+    [[nodiscard]] auto getDefaultConversions() const -> const ConversionFnMap& {
         return getConfigImpl().getDefaultConversions();
     }
 

@@ -14,7 +14,7 @@ class OptionGroup
     : public detail::ContextConfigForwarder<OptionGroup>,
       public HasFlag<OptionGroup>,
       public OptionComponent<OptionGroup> {
-    std::unique_ptr<Context> m_context = std::make_unique<Context>(true);
+    std::unique_ptr<Context> m_context = std::make_unique<Context>();
 public:
     OptionGroup() = default;
 
@@ -39,9 +39,9 @@ public:
 
     [[nodiscard]] auto getContext() const -> const Context&;
 private:
-    [[nodiscard]] auto getConfigImpl() -> ContextConfig& override;
+    [[nodiscard]] auto getConfigImpl() -> Config& override;
 
-    [[nodiscard]] auto getConfigImpl() const -> const ContextConfig& override;
+    [[nodiscard]] auto getConfigImpl() const -> const Config& override;
 };
 
 } // End namespace Argon
@@ -97,11 +97,11 @@ inline auto OptionGroup::getContext() const -> const Context& {
     return *m_context;
 }
 
-inline auto OptionGroup::getConfigImpl() -> ContextConfig& {
+inline auto OptionGroup::getConfigImpl() -> Config& {
     return m_context->config;
 }
 
-inline auto OptionGroup::getConfigImpl() const -> const ContextConfig& {
+inline auto OptionGroup::getConfigImpl() const -> const Config& {
     return m_context->config;
 }
 } // End namespace Argon

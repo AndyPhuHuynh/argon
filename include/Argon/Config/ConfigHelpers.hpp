@@ -5,12 +5,12 @@
 #include "Argon/Options/IOption.hpp"
 #include "Argon/Options/OptionCharBase.hpp"
 #include "Argon/Options/OptionIntegralBaseImpl.hpp"
-#include "ContextConfig.hpp"
+#include "Config.hpp"
 
 namespace Argon::detail {
 
 template <typename OptionType, typename ValueType>
-auto getOptionConfig(const ContextConfig& parserConfig, const IOption *option) -> OptionConfig<ValueType> {
+auto getOptionConfig(const Config& parserConfig, const IOption *option) -> OptionConfig<ValueType> {
     OptionConfig<ValueType> optionConfig;
     if constexpr (is_numeric_char_type<ValueType>) {
         if (const auto charOpt = dynamic_cast<const OptionCharBase<OptionType>*>(option); charOpt != nullptr) {
@@ -30,7 +30,7 @@ auto getOptionConfig(const ContextConfig& parserConfig, const IOption *option) -
     return optionConfig;
 }
 
-inline auto resolveContextConfig(const ContextConfig& parentConfig, const ContextConfig& childConfig) -> ContextConfig {
+inline auto resolveConfig(const Config& parentConfig, const Config& childConfig) -> Config {
     auto result = parentConfig;
     if (const auto charMode = childConfig.getDefaultCharMode(); charMode != CharMode::UseDefault) {
         result.setDefaultCharMode(charMode);

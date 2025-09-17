@@ -7,7 +7,7 @@
 #include <string_view>
 
 #include "Argon/Config/OptionConfig.hpp"
-#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/StringUtil.hpp"
 #include "Argon/Traits.hpp"
 
@@ -127,12 +127,12 @@ public:
     ISetValue() = default;
     virtual ~ISetValue() = default;
 
-    virtual void setValue(const ContextConfig& parserConfig, std::string_view flag, std::string_view value) = 0;
+    virtual void setValue(const Config& parserConfig, std::string_view flag, std::string_view value) = 0;
     virtual void setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) = 0;
 };
 
 template <typename T>
-using ConversionFn = std::function<bool(std::string_view, T&)>;
+using ConversionFn = std::function<bool(std::string_view, T*)>;
 using GenerateErrorMsgFn = std::function<std::string(std::string_view, std::string_view)>;
 
 template <typename Derived, typename T>
@@ -205,7 +205,7 @@ public:
         bool success;
         // Use custom conversion function for this specific option if supplied
         if (this->m_conversion_fn != nullptr) {
-            success = this->m_conversion_fn(value, outValue);
+            success = this->m_conversion_fn(value, &outValue);
         }
         // Search for conversion list for conversion for this type if specified
         else if (config.conversionFn != nullptr) {

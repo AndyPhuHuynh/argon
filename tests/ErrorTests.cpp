@@ -1026,23 +1026,23 @@ enum struct custom_enum_struct { ENUM1, ENUM2 };
 
 
 TEST_CASE("Custom typename", "[typename][custom-type]") {
-    auto parseCustomStruct = [] (const std::string_view arg, custom_struct& out) -> bool {
-        if (arg == "hello") { out = { .a = 10, .b = 20 }; return true; } else { return false; };
+    auto parseCustomStruct = [] (const std::string_view arg, custom_struct *out) -> bool {
+        if (arg == "hello") { *out = { .a = 10, .b = 20 }; return true; } else { return false; };
     };
-    auto parseCustomUnion = [] (const std::string_view arg, custom_union& out) -> bool {
-        if (arg == "hello") { out = { .a = 10 }; return true; } else { return false; };
+    auto parseCustomUnion = [] (const std::string_view arg, custom_union *out) -> bool {
+        if (arg == "hello") { *out = { .a = 10 }; return true; } else { return false; };
     };
-    auto parseCustomClass = [] (const std::string_view arg, custom_class& out) -> bool {
-        if (arg == "hello") { out = { .a = 10, .b = 20 }; return true; } else { return false; };
+    auto parseCustomClass = [] (const std::string_view arg, custom_class *out) -> bool {
+        if (arg == "hello") { *out = { .a = 10, .b = 20 }; return true; } else { return false; };
     };
-    auto parseCustomEnum = [] (const std::string_view arg, custom_enum& out) -> bool {
-        if (arg == "hello") { out = ENUM2; return true; } else { return false; };
+    auto parseCustomEnum = [] (const std::string_view arg, custom_enum *out) -> bool {
+        if (arg == "hello") { *out = ENUM2; return true; } else { return false; };
     };
-    auto parseCustomEnumClass = [] (const std::string_view arg, custom_enum_class& out) -> bool {
-        if (arg == "hello") { out = custom_enum_class::ENUM2; return true; } else { return false; };
+    auto parseCustomEnumClass = [] (const std::string_view arg, custom_enum_class *out) -> bool {
+        if (arg == "hello") { *out = custom_enum_class::ENUM2; return true; } else { return false; };
     };
-    auto parseCustomEnumStruct = [] (const std::string_view arg, custom_enum_struct& out) -> bool {
-        if (arg == "hello") { out = custom_enum_struct::ENUM2; return true; } else { return false; };
+    auto parseCustomEnumStruct = [] (const std::string_view arg, custom_enum_struct *out) -> bool {
+        if (arg == "hello") { *out = custom_enum_struct::ENUM2; return true; } else { return false; };
     };
 
     auto parser = Option<custom_struct>()["--struct"].withConversionFn(parseCustomStruct)

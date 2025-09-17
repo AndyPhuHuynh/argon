@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/Config/ContextConfigForwarder.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Flag.hpp"
@@ -14,7 +14,6 @@
 #include "Argon/Options/OptionHolder.hpp"
 #include "Argon/Traits.hpp"
 #include "Options/MultiPositional.hpp"
-
 
 namespace Argon {
     class IOption;
@@ -31,10 +30,9 @@ namespace Argon {
         std::vector<OptionHolder<IOption>> m_positionals;
         OptionHolder<IsMultiPositional> m_multiPositional;
     public:
-        ContextConfig config = ContextConfig(true);
+        Config config{};
 
-        // Context() = default;
-        explicit Context(const bool allowConfigUseDefault) : config(allowConfigUseDefault) {}
+        Context() = default;
 
         Context(const Context&) = default;
         auto operator=(const Context&) -> Context& = default;
@@ -99,9 +97,9 @@ namespace Argon {
         auto validateSetup(ErrorGroup& errorGroup) const -> void;
 
     private:
-        [[nodiscard]] auto getConfigImpl() -> ContextConfig& override;
+        [[nodiscard]] auto getConfigImpl() -> Config& override;
 
-        [[nodiscard]] auto getConfigImpl() const -> const ContextConfig& override;
+        [[nodiscard]] auto getConfigImpl() const -> const Config& override;
 
         [[nodiscard]] auto collectAllFlags() const -> std::vector<const Flag*>;
 
@@ -155,7 +153,7 @@ inline auto resolveAllChildContextConfigs(Context *context) -> void { // NOLINT 
     for (auto& optionHolder : context->getGroups()) {
         const auto group = optionHolder.getPtr();
         auto& groupContext = group->getContext();
-        groupContext.config = resolveContextConfig(context->config, groupContext.config);
+        groupContext.config = resolveConfig(context->config, groupContext.config);
         resolveAllChildContextConfigs(&groupContext);
     }
 }
@@ -380,11 +378,11 @@ inline auto Argon::Context::validateSetup(ErrorGroup& errorGroup) const -> void 
     validateSetup(FlagPath(), errorGroup);
 }
 
-inline auto Argon::Context::getConfigImpl() -> ContextConfig& {
+inline auto Argon::Context::getConfigImpl() -> Config& {
     return config;
 }
 
-inline auto Argon::Context::getConfigImpl() const -> const ContextConfig& {
+inline auto Argon::Context::getConfigImpl() const -> const Config& {
     return config;
 }
 

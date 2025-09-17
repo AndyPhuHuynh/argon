@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "Argon/Cli/SubcommandPath.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -14,24 +15,19 @@ namespace Argon {
     class CliLayer {
         std::unique_ptr<Subcommands> m_subcommands = nullptr;
         std::unique_ptr<DefaultCommand> m_defaultCommand = nullptr;
+        Config m_config;
     public:
         template <typename... Parts>
             requires (std::is_rvalue_reference_v<Parts&&> && ...)
         explicit CliLayer(Parts&&... parts);
 
-        auto withSubcommands(Subcommands&& subcommands) & -> CliLayer&;
-        auto withSubcommands(Subcommands&& subcommands) && -> CliLayer&&;
-        auto withDefaultCommand(DefaultCommand&& defaultCommand) & -> CliLayer&;
-        auto withDefaultCommand(DefaultCommand&& defaultCommand) && -> CliLayer&&;
-
         auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
-
+        auto resolveConfig(const Config *parentConfig) -> void;
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
-
     private:
-        auto addPart(Subcommands&& part);
-        auto addPart(DefaultCommand&& part);
-
+        auto addPart(Subcommands&& part) -> void;
+        auto addPart(DefaultCommand&& part) -> void;
+        auto addPart(Config&& part) -> void;
     };
 }
 
@@ -41,26 +37,6 @@ namespace Argon {
 template<typename ... Parts> requires (std::is_rvalue_reference_v<Parts&&> && ...)
 Argon::CliLayer::CliLayer(Parts&&... parts) {
     (addPart(std::move(parts)), ...);
-}
-
-inline auto Argon::CliLayer::withSubcommands(Subcommands&& subcommands) & -> CliLayer& {
-    m_subcommands = std::make_unique<Subcommands>(std::move(subcommands));
-    return *this;
-}
-
-inline auto Argon::CliLayer::withSubcommands(Subcommands&& subcommands) && -> CliLayer&& {
-    m_subcommands = std::make_unique<Subcommands>(std::move(subcommands));
-    return std::move(*this);
-}
-
-inline auto Argon::CliLayer::withDefaultCommand(DefaultCommand&& defaultCommand) & -> CliLayer& {
-    m_defaultCommand = std::make_unique<DefaultCommand>(std::move(defaultCommand));
-    return *this;
-}
-
-inline auto Argon::CliLayer::withDefaultCommand(DefaultCommand&& defaultCommand) && -> CliLayer&& {
-    m_defaultCommand = std::make_unique<DefaultCommand>(std::move(defaultCommand));
-    return std::move(*this);
 }
 
 inline auto Argon::CliLayer::validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void {
@@ -81,6 +57,20 @@ inline auto Argon::CliLayer::validate(SubcommandPath& path, ErrorGroup& validati
     }
 }
 
+inline auto Argon::CliLayer::resolveConfig(const Config *parentConfig) -> void {
+    if (parentConfig == nullptr) {
+        m_config.resolveUseDefaults();
+    } else {
+        m_config = detail::resolveConfig(*parentConfig, m_config);
+    }
+    if (m_subcommands) {
+        m_subcommands->resolveConfig(parentConfig);
+    }
+    if (m_defaultCommand) {
+        m_defaultCommand->resolveConfig(parentConfig);
+    }
+}
+
 inline auto Argon::CliLayer::run(Scanner& scanner, CliErrors& errors) const -> void {
     const Token nextToken = scanner.peekToken();
     // Check for subcommands
@@ -98,11 +88,15 @@ inline auto Argon::CliLayer::run(Scanner& scanner, CliErrors& errors) const -> v
 }
 
 inline auto Argon::CliLayer::addPart(Subcommands&& part) {
-    withSubcommands(std::move(part));
+    m_subcommands = std::make_unique<Subcommands>(std::move(part));
 }
 
 inline auto Argon::CliLayer::addPart(DefaultCommand&& part) {
-    withDefaultCommand(std::move(part));
+    m_defaultCommand = std::make_unique<DefaultCommand>(std::move(part));
+}
+
+inline auto Argon::CliLayer::addPart(Config&& part) {
+    m_config = std::move(part);
 }
 
 #endif // ARGON_CLI_LAYER_HPP

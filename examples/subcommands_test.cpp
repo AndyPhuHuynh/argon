@@ -2,6 +2,7 @@
 #include "Argon/Cli/CliLayer.hpp"
 #include "Argon/Cli/DefaultCommand.hpp"
 #include "Argon/Cli/ISubcommand.hpp"
+#include "Argon/Parser.hpp"
 
 class Region : public Argon::ISubcommand {
 public:
@@ -25,6 +26,10 @@ public:
     Coordinates() : ISubcommand("coordinates") {};
     auto buildCli() -> Argon::CliLayer override {
         return Argon::CliLayer{
+            Argon::Config{
+                Argon::SetPositionalPolicy(Argon::PositionalPolicy::AfterFlags),
+                Argon::SetCharMode(Argon::CharMode::ExpectInteger),
+            },
             Argon::Subcommands{
                 Region{},
                 Region{}

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "Argon/Config/ContextConfig.hpp"
+#include "Argon/Config/Config.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Scanner.hpp"
 

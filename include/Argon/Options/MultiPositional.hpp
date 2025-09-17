@@ -27,7 +27,7 @@ namespace Argon {
 
         MultiPositional(const std::vector<T>& defaultValue, std::vector<T> *out);
 
-        auto setValue(const ContextConfig& parserConfig, std::string_view flag, std::string_view value) -> void override;
+        auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> void override;
     };
 
 }
@@ -46,7 +46,7 @@ Argon::MultiPositional<std::vector<T>>::MultiPositional(const std::vector<T>& de
     : OptionVectorBase<MultiPositional, T>(defaultValue, out) {}
 
 template<typename T>
-auto Argon::MultiPositional<std::vector<T>>::setValue(const ContextConfig& parserConfig, std::string_view flag,
+auto Argon::MultiPositional<std::vector<T>>::setValue(const Config& parserConfig, std::string_view flag,
     std::string_view value) -> void {
     OptionConfig<T> optionConfig = detail::getOptionConfig<MultiPositional, T>(parserConfig, this);
     OptionVectorBase<MultiPositional, T>::setValue(optionConfig, flag, value);
