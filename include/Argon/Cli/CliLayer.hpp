@@ -3,7 +3,7 @@
 
 #include <memory>
 
-#include "Argon/Cli/SubcommandPath.hpp"
+#include "../PathBuilder.hpp"
 #include "Argon/Config/Config.hpp"
 #include "Argon/Scanner.hpp"
 
@@ -21,7 +21,7 @@ namespace Argon {
             requires (std::is_rvalue_reference_v<Parts&&> && ...)
         explicit CliLayer(Parts&&... parts);
 
-        auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
+        auto validate(PathBuilder& path, ErrorGroup& validationErrors) const -> void;
         auto resolveConfig(const Config *parentConfig) -> void;
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
     private:
@@ -39,13 +39,13 @@ Argon::CliLayer::CliLayer(Parts&&... parts) {
     (addPart(std::move(parts)), ...);
 }
 
-inline auto Argon::CliLayer::validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void {
+inline auto Argon::CliLayer::validate(PathBuilder& path, ErrorGroup& validationErrors) const -> void {
     if (m_defaultCommand == nullptr &&
         (m_subcommands == nullptr || m_subcommands->getCommands().empty())) {
         validationErrors.addErrorMessage(
             std::format(
                 R"(In subcommand "{}" "Empty CLiLayer found. )"
-                R"(CliLayer must include either at least one subcommand or a default command.)", path.toString()),
+                R"(CliLayer must include either at least one subcommand or a default command.)", path.toString(" ")),
             -1, ErrorType::Validation_EmptyCliLayer);
         return;
         }
@@ -87,15 +87,15 @@ inline auto Argon::CliLayer::run(Scanner& scanner, CliErrors& errors) const -> v
     }
 }
 
-inline auto Argon::CliLayer::addPart(Subcommands&& part) {
+inline auto Argon::CliLayer::addPart(Subcommands&& part) -> void {
     m_subcommands = std::make_unique<Subcommands>(std::move(part));
 }
 
-inline auto Argon::CliLayer::addPart(DefaultCommand&& part) {
+inline auto Argon::CliLayer::addPart(DefaultCommand&& part) -> void{
     m_defaultCommand = std::make_unique<DefaultCommand>(std::move(part));
 }
 
-inline auto Argon::CliLayer::addPart(Config&& part) {
+inline auto Argon::CliLayer::addPart(Config&& part) -> void {
     m_config = std::move(part);
 }
 

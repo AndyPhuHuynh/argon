@@ -2,106 +2,91 @@
 #define ARGON_FLAG_INCLUDE
 
 #include <algorithm>
+#include <iostream>
 #include <numeric>
 #include <sstream>
-#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace Argon {
 
-struct Flag;
-struct FlagPathWithAlias;
-struct FlagPath;
+    struct Flag;
+    struct FlagPathWithAlias;
+    struct FlagPath;
 
+    struct Flag {
+        std::string mainFlag;
+        std::vector<std::string> aliases;
 
-struct Flag {
-    std::string mainFlag;
-    std::vector<std::string> aliases;
+        Flag() = default;
 
-    Flag() = default;
+        explicit Flag(std::string_view flag);
 
-    explicit Flag(std::string_view flag);
+        [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
 
-    [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
+        [[nodiscard]] auto getString() const -> std::string;
 
-    [[nodiscard]] auto getString() const -> std::string;
+        [[nodiscard]] auto isEmpty() const -> bool;
 
-    [[nodiscard]] auto isEmpty() const -> bool;
+        auto applyPrefixes(std::string_view shortPrefix, std::string_view longPrefix);
 
-    auto applyPrefixes(std::string_view shortPrefix, std::string_view longPrefix);
+        auto operator<=>(const Flag&) const = default;
+    };
 
-    auto operator<=>(const Flag&) const = default;
-};
+    struct FlagPathWithAlias {
+        std::vector<Flag> groupPath;
+        Flag flag;
 
-struct FlagPathWithAlias {
-    std::vector<Flag> groupPath;
-    Flag flag;
+        FlagPathWithAlias() = default;
 
-    FlagPathWithAlias() = default;
+        explicit FlagPathWithAlias(const FlagPath& flagPath);
 
-    explicit FlagPathWithAlias(const FlagPath& flagPath);
+        FlagPathWithAlias(std::initializer_list<Flag> flags);
 
-    FlagPathWithAlias(std::initializer_list<Flag> flags);
+        FlagPathWithAlias(std::vector<Flag> path, Flag flag);
 
-    FlagPathWithAlias(std::vector<Flag> path, Flag flag);
+        [[nodiscard]] auto getString() const -> std::string;
 
-    [[nodiscard]] auto getString() const -> std::string;
+        auto operator<=>(const FlagPathWithAlias&) const = default;
+    };
 
-    auto operator<=>(const FlagPathWithAlias&) const = default;
-};
+    struct FlagPath {
+        std::vector<std::string> groupPath;
+        std::string flag;
 
-struct FlagPath {
-    std::vector<std::string> groupPath;
-    std::string flag;
+        FlagPath() = default;
 
-    FlagPath() = default;
+        explicit FlagPath(std::string_view flag);
 
-    explicit FlagPath(std::string_view flag);
+        FlagPath(std::initializer_list<std::string_view> flags);
 
-    FlagPath(std::initializer_list<std::string_view> flags);
+        auto operator<=>(const FlagPath&) const = default;
 
-    auto operator<=>(const FlagPath&) const = default;
+        [[nodiscard]] auto toString() const -> std::string;
 
-    [[nodiscard]] auto getString() const -> std::string;
+        auto extendPath(std::string_view newFlag) -> void;
+    };
 
-    auto extendPath(std::string_view newFlag) -> void;
-};
+    class IFlag {
+    protected:
+        Flag m_flag;
+    public:
+        virtual ~IFlag() = default;
+        [[nodiscard]] auto getFlag() const -> const Flag&;
+    };
 
-class InvalidFlagPathException : public std::runtime_error {
-public:
-    explicit InvalidFlagPathException(const FlagPath& flagPath);
-    explicit InvalidFlagPathException(std::string_view msg);
-};
+    template <typename Derived>
+    class HasFlag : public virtual IFlag {
+        auto applySetFlag(std::string_view flag) -> void;
+        auto applySetFlag(std::initializer_list<std::string_view> flags) -> void;
+    public:
+        auto operator[](std::string_view flag) & -> Derived&;
+        auto operator[](std::string_view flag) && -> Derived&&;
 
-class IFlag {
-protected:
-    Flag m_flag;
-public:
-    IFlag() = default;
-    ~IFlag() = default;
-
-    IFlag(const IFlag&) = default;
-    IFlag& operator=(const IFlag&) = default;
-
-    IFlag(IFlag&&) = default;
-    IFlag& operator=(IFlag&&) = default;
-
-    [[nodiscard]] auto getFlag() const -> const Flag&;
-};
-
-template <typename Derived>
-class HasFlag : public IFlag{
-    auto applySetFlag(std::string_view flag) -> void;
-    auto applySetFlag(std::initializer_list<std::string_view> flags) -> void;
-public:
-    auto operator[](std::string_view flag) & -> Derived&;
-    auto operator[](std::string_view flag) && -> Derived;
-
-    auto operator[](std::initializer_list<std::string_view> flags) & -> Derived&;
-    auto operator[](std::initializer_list<std::string_view> flags) && -> Derived;
-};
+        auto operator[](std::initializer_list<std::string_view> flags) & -> Derived&;
+        auto operator[](std::initializer_list<std::string_view> flags) && -> Derived&&;
+    };
 
 } // End namespace Argon
 
@@ -149,62 +134,70 @@ struct std::hash<Argon::FlagPath> {
 //---------------------------------------------------Free Functions-----------------------------------------------------
 
 namespace Argon {
+    inline auto isAlias(const Flag& flag1, const Flag& flag2) -> bool {
+        const auto matches = [&](const std::string& alias) {
+            return flag2.mainFlag == alias || std::ranges::contains(flag2.aliases, alias);
+        };
 
-inline auto isAlias(const Flag& flag1, const Flag& flag2) -> bool {
-    const auto matches = [&](const std::string& alias) {
-        return flag2.mainFlag == alias || std::ranges::contains(flag2.aliases, alias);
-    };
-
-    if (!matches(flag1.mainFlag)) {
-        return false;
-    }
-
-    return std::ranges::all_of(flag1.aliases, matches);
-}
-
-inline auto isAlias(const FlagPathWithAlias& flagPathWithAlias, const FlagPath& flagPath) -> bool {
-    if (flagPathWithAlias.groupPath.size() != flagPath.groupPath.size()) return false;
-    for (size_t i = 0; i < flagPath.groupPath.size(); i++) {
-        if (!flagPathWithAlias.groupPath[i].containsFlag(flagPath.groupPath[i])) return false;
-    }
-    return flagPathWithAlias.flag.containsFlag(flagPath.flag);
-}
-
-inline auto isAlias(const FlagPathWithAlias& flagPath1, const FlagPathWithAlias& flagPath2) -> bool {
-    if (flagPath1.groupPath.size() != flagPath2.groupPath.size()) return false;
-    for (size_t i = 0; i < flagPath1.groupPath.size(); i++) {
-        if (!isAlias(flagPath1.groupPath[i], flagPath2.groupPath[i])) {
+        if (!matches(flag1.mainFlag)) {
             return false;
         }
+
+        return std::ranges::all_of(flag1.aliases, matches);
     }
-    return isAlias(flagPath1.flag, flagPath2.flag);
-}
 
-inline auto containsInvalidFlagCharacters(const std::string_view str) -> std::optional<char> {
-    if (str.contains(' '))  return ' ';
-    if (str.contains('\t')) return '\t';
-    if (str.contains('\n')) return '\n';
-    if (str.contains('\r')) return '\r';
-    if (str.contains('\'')) return '\'';
-    if (str.contains('"'))  return '"';
-    if (str.contains('='))  return '=';
-    return std::nullopt;
-}
-
-inline auto getStringReprForInvalidChar(const char c) -> std::string {
-    switch (c) {
-        case ' ':  return "space";
-        case '\t': return "tab";
-        case '\n': return "newline";
-        case '\r': return "carriage return";
-        case '\'': return "single quote";
-        case '\"': return "double quote";
-        case '=':  return "=";
-        default:   return "unknown";
+    inline auto isAlias(const FlagPathWithAlias& flagPathWithAlias, const FlagPath& flagPath) -> bool {
+        if (flagPathWithAlias.groupPath.size() != flagPath.groupPath.size()) return false;
+        for (size_t i = 0; i < flagPath.groupPath.size(); i++) {
+            if (!flagPathWithAlias.groupPath[i].containsFlag(flagPath.groupPath[i])) return false;
+        }
+        return flagPathWithAlias.flag.containsFlag(flagPath.flag);
     }
-}
 
+    inline auto isAlias(const FlagPathWithAlias& flagPath1, const FlagPathWithAlias& flagPath2) -> bool {
+        if (flagPath1.groupPath.size() != flagPath2.groupPath.size()) return false;
+        for (size_t i = 0; i < flagPath1.groupPath.size(); i++) {
+            if (!isAlias(flagPath1.groupPath[i], flagPath2.groupPath[i])) {
+                return false;
+            }
+        }
+        return isAlias(flagPath1.flag, flagPath2.flag);
+    }
+
+    inline auto containsInvalidFlagCharacters(const std::string_view str) -> std::optional<char> {
+        if (str.contains(' '))  return ' ';
+        if (str.contains('\t')) return '\t';
+        if (str.contains('\n')) return '\n';
+        if (str.contains('\r')) return '\r';
+        if (str.contains('\'')) return '\'';
+        if (str.contains('"'))  return '"';
+        if (str.contains('='))  return '=';
+        return std::nullopt;
+    }
+
+    inline auto getStringReprForInvalidChar(const char c) -> std::string {
+        switch (c) {
+            case ' ':  return "space";
+            case '\t': return "tab";
+            case '\n': return "newline";
+            case '\r': return "carriage return";
+            case '\'': return "single quote";
+            case '\"': return "double quote";
+            case '=':  return "=";
+            default:   return "unknown";
+        }
+    }
 } // End namespace Argon
+
+namespace Argon::detail {
+    [[noreturn]] inline auto fatalInvalidFlagPath(const FlagPath& path) {
+        std::cerr << std::format(
+            "[Argon] Fatal: Invalid flag path: \"{}\". "
+            "Check to see if the specified path and templated type are correct and the correct function was called.\n",
+             path.toString());
+        std::terminate();
+    }
+}
 
 //---------------------------------------------------Implementations----------------------------------------------------
 
@@ -273,7 +266,7 @@ inline FlagPath::FlagPath(const std::initializer_list<std::string_view> flags) {
     flag = *end;
 }
 
-inline auto FlagPath::getString() const -> std::string {
+inline auto FlagPath::toString() const -> std::string {
     if (groupPath.empty()) return flag;
 
     return std::accumulate(std::next(groupPath.begin()), groupPath.end(), groupPath.front(), []
@@ -290,16 +283,6 @@ inline auto FlagPath::extendPath(const std::string_view newFlag) -> void {
 
     groupPath.emplace_back(flag);
     flag = newFlag;
-}
-
-inline InvalidFlagPathException::InvalidFlagPathException(const FlagPath& flagPath)
-    : std::runtime_error(std::format(
-        "Invalid flag path: {}. Check to see if the specified path and templated type are correct.",
-        flagPath.getString())) {
-}
-
-inline InvalidFlagPathException::InvalidFlagPathException(const std::string_view msg)
-    : std::runtime_error(std::string(msg)) {
 }
 
 inline auto IFlag::getFlag() const -> const Flag& {
@@ -340,9 +323,9 @@ auto HasFlag<Derived>::operator[](const std::string_view flag) & -> Derived& {
 }
 
 template<typename Derived>
-auto HasFlag<Derived>::operator[](const std::string_view flag) && -> Derived {
+auto HasFlag<Derived>::operator[](const std::string_view flag) && -> Derived&& {
     applySetFlag(flag);
-    return static_cast<Derived&>(*this);
+    return static_cast<Derived&&>(*this);
 }
 
 template<typename Derived>
@@ -352,9 +335,9 @@ auto HasFlag<Derived>::operator[](const std::initializer_list<std::string_view> 
 }
 
 template<typename Derived>
-auto HasFlag<Derived>::operator[](const std::initializer_list<std::string_view> flags) && -> Derived {
+auto HasFlag<Derived>::operator[](const std::initializer_list<std::string_view> flags) && -> Derived&& {
     applySetFlag(flags);
-    return static_cast<Derived&>(*this);
+    return static_cast<Derived&&>(*this);
 }
 
 

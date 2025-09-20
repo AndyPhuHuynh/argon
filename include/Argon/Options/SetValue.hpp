@@ -127,8 +127,8 @@ public:
     ISetValue() = default;
     virtual ~ISetValue() = default;
 
-    virtual void setValue(const Config& parserConfig, std::string_view flag, std::string_view value) = 0;
-    virtual void setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) = 0;
+    virtual auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> std::string = 0;
+    virtual auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string = 0;
 };
 
 template <typename T>
@@ -140,13 +140,11 @@ class Converter {
 protected:
     ConversionFn<T> m_conversion_fn = nullptr;
     GenerateErrorMsgFn m_generate_error_msg_fn = nullptr;
-    std::string m_conversionError;
 
-    auto generateErrorMsg(const OptionConfig<T>& config, std::string_view optionName, std::string_view invalidArg) -> void {
+    auto generateErrorMsg(const OptionConfig<T>& config, std::string_view optionName, std::string_view invalidArg) -> std::string {
         // Generate custom error message if provided
         if (this->m_generate_error_msg_fn != nullptr) {
-            this->m_conversionError = this->m_generate_error_msg_fn(optionName, invalidArg);
-            return;
+            return this->m_generate_error_msg_fn(optionName, invalidArg);
         }
 
         // Else generate default message
@@ -194,14 +192,13 @@ protected:
 
         // Actual value
         ss << std::format(R"(, got: "{}")", invalidArg);
-        this->m_conversionError = ss.str();
+        return ss.str();
     }
 
 public:
     auto convert(
          const OptionConfig<T>& config, const std::string_view flag, std::string_view value, T& outValue
-    ) -> void {
-        m_conversionError.clear();
+    ) -> std::string {
         bool success;
         // Use custom conversion function for this specific option if supplied
         if (this->m_conversion_fn != nullptr) {
@@ -246,16 +243,9 @@ public:
         }
         // Set error if not successful
         if (!success) {
-            generateErrorMsg(config, flag, value);
+            return generateErrorMsg(config, flag, value);
         }
-    }
-
-    [[nodiscard]] auto hasConversionError() const -> bool {
-        return !m_conversionError.empty();
-    }
-
-    auto getConversionError() -> std::string {
-        return m_conversionError;
+        return "";
     }
 
     auto withConversionFn(const ConversionFn<T>& conversion_fn) & -> Derived& {
@@ -298,16 +288,14 @@ public:
         return m_value;
     }
 protected:
-    auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> void override {
+    auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string override {
         T temp;
-        this->convert(static_cast<const OptionConfig<T>&>(optionConfig), flag, value, temp);
-        if (this->hasConversionError()) {
-            return;
-        }
+        std::string errorMsg = this->convert(static_cast<const OptionConfig<T>&>(optionConfig), flag, value, temp);
         m_value = temp;
         if (m_out != nullptr) {
             *m_out = temp;
         }
+        return errorMsg;
     }
 };
 

@@ -4,7 +4,7 @@
 #include <memory>
 
 #include "Argon/Cli/CliErrors.hpp"
-#include "Argon/Cli/SubcommandPath.hpp"
+#include "../PathBuilder.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -41,7 +41,7 @@ Argon::Cli::Cli(Parts&&... parts) {
 
 inline auto Argon::Cli::validate() -> void {
     if (m_isValidated) return;
-    SubcommandPath path;
+    PathBuilder path;
     m_rootLayer->validate(path, m_errors.validationErrors);
     m_isValidated = true;
 }

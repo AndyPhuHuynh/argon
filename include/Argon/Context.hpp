@@ -127,12 +127,6 @@ namespace Argon {
 
 namespace Argon::detail {
 
-inline auto startsWithAny(const std::string_view str, const std::vector<std::string>& prefixes) -> bool {
-    return std::ranges::any_of(prefixes, [str](const std::string_view prefix) {
-        return str.starts_with(prefix);
-    });
-}
-
 auto assertHasFlag(const auto *opt) -> void {
     assert(dynamic_cast<const IFlag*>(opt) != nullptr && "Argon internal error: option does not have a flag");
 }
@@ -232,7 +226,7 @@ auto Argon::Context::getOptionValue(const FlagPath& flagPath) -> const ValueType
         getOptionDynamic<Option<ValueType>>(flagPath.flag) :
         group->getContext().getOptionDynamic<Option<ValueType>>(flagPath.flag);
     if (opt == nullptr) {
-        throw InvalidFlagPathException(flagPath);
+        detail::fatalInvalidFlagPath(flagPath);
     }
     return opt->getValue();
 }
@@ -244,7 +238,7 @@ auto Argon::Context::getMultiValue(const FlagPath& flagPath) -> const Container&
         getOptionDynamic<MultiOption<Container>>(flagPath.flag) :
         group->getContext().getOptionDynamic<MultiOption<Container>>(flagPath.flag);
     if (opt == nullptr) {
-        throw InvalidFlagPathException(flagPath);
+        detail::fatalInvalidFlagPath(flagPath);
     }
     return opt->getValue();
 }
@@ -390,7 +384,7 @@ inline auto Argon::Context::validateSetup( // NOLINT (misc-no-recursion)
     const FlagPath& pathSoFar, ErrorGroup& validationErrors
 ) const -> void {
     const auto allFlags = collectAllFlags();
-    checkPrefixes(validationErrors, pathSoFar.getString());
+    checkPrefixes(validationErrors, pathSoFar.toString());
     std::set<std::string> flags;
     std::set<std::string> duplicateFlags;
     for (const auto& flag : allFlags) {
@@ -416,7 +410,7 @@ inline auto Argon::Context::validateSetup( // NOLINT (misc-no-recursion)
                 -1, ErrorType::Validation_DuplicateFlag);
         } else {
             validationErrors.addErrorMessage(std::format(
-                R"(Multiple flags found with the value of "{}" within group "{}")", flag, pathSoFar.getString()),
+                R"(Multiple flags found with the value of "{}" within group "{}")", flag, pathSoFar.toString()),
                 -1, ErrorType::Validation_DuplicateFlag);
         }
     }
@@ -499,7 +493,7 @@ inline auto Argon::Context::resolveFlagGroup(const FlagPath& flagPath) -> Option
         });
 
         if (it == groups.end()) {
-            throw InvalidFlagPathException(flagPath);
+            detail::fatalInvalidFlagPath(flagPath);
         }
         group = it->getPtr();
     }

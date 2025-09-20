@@ -28,11 +28,11 @@ public:
 
     Option(T defaultValue, T *out) : SetSingleValueImpl<Option, T>(defaultValue, out) {};
 protected:
-    auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> void override {
+    auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> std::string override {
         auto optionConfig = detail::getOptionConfig<Option, T>(parserConfig, this);
-        SetSingleValueImpl<Option, T>::setValue(optionConfig, flag, value);
-        this->m_error = this->getConversionError();
+        this->m_error = SetSingleValueImpl<Option, T>::setValue(optionConfig, flag, value);
         this->m_isSet = true;
+        return this->m_error;
     }
 };
 

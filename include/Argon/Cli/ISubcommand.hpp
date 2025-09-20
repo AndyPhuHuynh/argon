@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "Argon/Cli/CliErrors.hpp"
-#include "Argon/Cli/SubcommandPath.hpp"
+#include "../PathBuilder.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/Scanner.hpp"
 
@@ -26,7 +26,7 @@ namespace Argon {
         [[nodiscard]] auto getName() const -> std::string_view { return m_name; }
 
         auto getCliLayer() -> CliLayer&;
-        auto validate(SubcommandPath& path, ErrorGroup& validationErrors);
+        auto validate(PathBuilder& path, ErrorGroup& validationErrors);
         auto run(Scanner& scanner, CliErrors& errors) -> void;
 
     protected:
@@ -41,7 +41,7 @@ inline auto Argon::ISubcommand::getCliLayer() -> CliLayer& {
     return *m_layer.value();
 }
 
-inline auto Argon::ISubcommand::validate(SubcommandPath& path, ErrorGroup& validationErrors) {
+inline auto Argon::ISubcommand::validate(PathBuilder& path, ErrorGroup& validationErrors) {
     path.push(getName());
     getCliLayer().validate(path, validationErrors);
     path.pop();

@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "Argon/Cli/SubcommandPath.hpp"
+#include "../PathBuilder.hpp"
 #include "Argon/Error.hpp"
 
 namespace Argon {
@@ -29,7 +29,7 @@ namespace Argon {
         auto getCommand(std::string_view name) -> ISubcommand *;
         auto getCommands() -> std::vector<std::unique_ptr<ISubcommand>>&;
 
-        auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
+        auto validate(PathBuilder& path, ErrorGroup& validationErrors) const -> void;
         auto resolveConfig(const Config *parentConfig) const -> void;
     };
 }
@@ -45,7 +45,7 @@ Argon::Subcommands::Subcommands(Args&&... args) {
 
 template<typename T> requires (std::is_base_of_v<Argon::ISubcommand, T> && std::is_rvalue_reference_v<T&&>)
 auto Argon::Subcommands::addSubcommand(T&& subcommand) {
-    m_subcommands.emplace_back(std::make_unique<T>(std::move(subcommand)));
+    m_subcommands.emplace_back(std::make_unique<T>(std::forward<T>(subcommand)));
 }
 
 inline auto Argon::Subcommands::getCommand(std::string_view name) -> ISubcommand * {
@@ -63,7 +63,7 @@ inline auto Argon::Subcommands::getCommands() -> std::vector<std::unique_ptr<ISu
     return m_subcommands;
 }
 
-inline auto Argon::Subcommands::validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void {
+inline auto Argon::Subcommands::validate(PathBuilder& path, ErrorGroup& validationErrors) const -> void {
     std::unordered_map<std::string_view, int> seenNames;
     for (const auto& subcommand : m_subcommands) {
         std::string_view name = subcommand->getName();
@@ -80,7 +80,7 @@ inline auto Argon::Subcommands::validate(SubcommandPath& path, ErrorGroup& valid
                     -1, ErrorType::Validation_DuplicateSubcommandName);
             } else {
                 validationErrors.addErrorMessage(
-                    std::format(R"(In subcommand "{}": {} subcommands with the name "{}" encountered)", path.toString(), count, name),
+                    std::format(R"(In subcommand "{}": {} subcommands with the name "{}" encountered)", path.toString(" "), count, name),
                     -1, ErrorType::Validation_DuplicateSubcommandName);
             }
         }

@@ -1,7 +1,9 @@
+#include "Argon/NewContext.hpp"
 #include "Argon/Cli/Cli.hpp"
 #include "Argon/Cli/CliLayer.hpp"
 #include "Argon/Cli/DefaultCommand.hpp"
 #include "Argon/Cli/ISubcommand.hpp"
+#include "Argon/Options/NewMultiOption.hpp"
 #include "Argon/Parser.hpp"
 
 class Region : public Argon::ISubcommand {
@@ -10,7 +12,7 @@ public:
     auto buildCli() -> Argon::CliLayer override {
         return Argon::CliLayer{
             Argon::DefaultCommand{
-                Argon::Option<std::string>()["--country"]
+                Argon::NewOption<std::string>()["--country"]
             }.withMain([](Argon::ContextView ctx) {
                 std::cout << "Region: " << ctx.get<std::string>({"--country"}) << "\n";
             })
@@ -19,9 +21,6 @@ public:
 };
 
 class Coordinates : public Argon::ISubcommand {
-    int x = 0;
-    int y = 0;
-    int z = 0;
 public:
     Coordinates() : ISubcommand("coordinates") {};
     auto buildCli() -> Argon::CliLayer override {
@@ -32,18 +31,17 @@ public:
             },
             Argon::Subcommands{
                 Region{},
-                Region{}
             },
             Argon::DefaultCommand{
-                Argon::Option(&x)["-x"],
-                Argon::Option(&y)["-y"],
-                Argon::Option(&z)["-z"],
-                Argon::OptionGroup()["--group"]
-            }.withMain([&](Argon::ContextView) {
+                Argon::NewOption<int>()["-x"],
+                Argon::NewOption<int>()["-y"],
+                Argon::NewOption<int>()["-z"],
+                Argon::NewOptionGroup()["--group"]
+            }.withMain([&](Argon::ContextView ctx) {
                 std::cout << "Inside of coordinates subcommand!\n";
-                std::cout << "X: " << x << std::endl;
-                std::cout << "Y: " << y << std::endl;
-                std::cout << "Z: " << z << std::endl;
+                std::cout << "X: " << ctx.get<int>({"-x"}) << std::endl;
+                std::cout << "Y: " << ctx.get<int>({"-y"}) << std::endl;
+                std::cout << "Z: " << ctx.get<int>({"-z"}) << std::endl;
             })
         };
     }
@@ -55,17 +53,29 @@ int main() {
             Coordinates{},
         },
         Argon::DefaultCommand{
-            Argon::Option<int>()[{"-x"}],
-            Argon::Option<int>()[{"-y"}],
-            Argon::Option<int>()[{"-z"}]
+            Argon::NewOption<int>()[{"-x"}],
+            Argon::NewOption<int>()[{"-y"}],
+            Argon::NewOption<int>()[{"-z"}],
+            Argon::NewOptionGroup(
+                Argon::NewOption<std::string>()["--name"],
+                Argon::NewOption<std::string>()["--age"]
+            )["--group"],
+            Argon::NewMultiOption<std::string>()[{"--friends"}]
         }.withMain([](Argon::ContextView view) {
             std::cout << "Inside default command main\n";
             std::cout << "X: " << view.get<int>({"-x"}) << "\n";
             std::cout << "Y: " << view.get<int>({"-y"}) << "\n";
             std::cout << "Z: " << view.get<int>({"-z"}) << "\n";
+            std::cout << "Name: " << view.get<std::string>({"--group", "--name"}) << "\n";
+            std::cout << "Age:  " << view.get<std::string>({"--group", "--age"}) << "\n";
+            std::cout << "Friends:\n";
+            for (const auto& f : view.getAll<std::string>({"--friends"})) {
+                std::cout << "    " << f << "\n";
+            }
         })
     };
-    layer.run("coordinates region --country USA");
+    // layer.run("coordinates region --country USA");
+    layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] --friends John Mary Sally Joshua");
 
     if (layer.hasErrors()) {
         const auto& [validationErrors, syntaxErrors, analysisErrors] = layer.getErrors();
@@ -73,4 +83,12 @@ int main() {
         syntaxErrors.printErrors();
         analysisErrors.printErrors();
     }
+
+    // Argon::detail::NewContext newContext;
+    // newContext.addOption(Argon::NewOption<int>()["--intFlag"]);
+    //
+    // Argon::NewOptionGroup group{
+    //     Argon::NewOption<std::string>()["--group"],
+    //     Argon::NewOptionGroup{}
+    // };
 }

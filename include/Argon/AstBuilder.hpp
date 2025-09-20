@@ -39,10 +39,6 @@ namespace Argon::detail {
             -> std::variant<std::monostate, Token, std::unique_ptr<PositionalAst>>;
         auto skipToNextValidFlag(const Context& context, const Ast& parentAst) -> void;
     };
-
-    inline auto isValue(const Token& token) {
-        return token.kind == TokenKind::IDENTIFIER || token.kind == TokenKind::STRING_LITERAL;
-    }
 }
 
 // --------------------------------------------- Implementations -------------------------------------------------------

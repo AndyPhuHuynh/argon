@@ -1,14 +1,14 @@
-#ifndef ARGON_SUBCOMMAND_PATH_HPP
-#define ARGON_SUBCOMMAND_PATH_HPP
+#ifndef ARGON_PATH_BUILDER_HPP
+#define ARGON_PATH_BUILDER_HPP
 
 #include <string>
 #include <vector>
 
 namespace Argon {
-    struct SubcommandPath {
+    struct PathBuilder {
         std::vector<std::string> path;
 
-        auto empty() const -> bool {
+        [[nodiscard]] auto empty() const -> bool {
             return path.empty();
         }
 
@@ -20,16 +20,17 @@ namespace Argon {
             path.pop_back();
         }
 
-        auto toString() const -> std::string {
-            std::string s = "";
+        [[nodiscard]] auto toString(const std::string_view delimiter) const -> std::string {
+            std::string s;
             if (path.empty()) return s;
             s += path.front();
             for (size_t i = 1; i < path.size(); ++i) {
-                s += " " + path[i];
+                s += delimiter;
+                s += path[i];
             }
             return s;
         }
     };
 }
 
-#endif // ARGON_SUBCOMMAND_PATH_HPP
+#endif // ARGON_PATH_BUILDER_HPP
