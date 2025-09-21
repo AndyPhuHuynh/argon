@@ -1,17 +1,17 @@
-#ifndef ARGON_NEW_OPTION_DESCRIPTION_HPP
-#define ARGON_NEW_OPTION_DESCRIPTION_HPP
+#ifndef ARGON_NEW_POSITIONAL_DESCRIPTION_HPP
+#define ARGON_NEW_POSITIONAL_DESCRIPTION_HPP
 
 #include <string>
 
 namespace Argon::detail {
-    class IOptionDescription {
+    class IPositionalDescription {
     protected:
-        std::string m_inputHint;
+        std::string m_name;
         std::string m_description;
 
     public:
-        [[nodiscard]] auto getInputHint() const -> const std::string& {
-            return m_inputHint;
+        [[nodiscard]] auto getName() const -> const std::string& {
+            return m_name;
         }
 
         [[nodiscard]] auto getDescription() const -> const std::string& {
@@ -20,15 +20,15 @@ namespace Argon::detail {
     };
 
     template <typename Derived>
-    class OptionDescriptionImpl : public virtual IOptionDescription {
+    class PositionalDescriptionImpl : public virtual IPositionalDescription {
     public:
-        auto withInputHint(const std::string_view hint) & -> Derived& {
-            m_inputHint = hint;
+        auto withName(const std::string_view hint) & -> Derived& {
+            m_name = hint;
             return *this;
         }
 
-        auto withInputHint(const std::string_view hint) && -> Derived&& {
-            m_inputHint = hint;
+        auto withName(const std::string_view hint) && -> Derived&& {
+            m_name = hint;
             return static_cast<Derived&&>(*this);
         }
 
@@ -43,5 +43,4 @@ namespace Argon::detail {
         }
     };
 }
-
-#endif // ARGON_NEW_OPTION_DESCRIPTION_HPP
+#endif //  ARGON_NEW_POSITIONAL_DESCRIPTION_HPP

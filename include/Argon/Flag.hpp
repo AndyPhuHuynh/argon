@@ -197,6 +197,37 @@ namespace Argon::detail {
              path.toString());
         std::terminate();
     }
+
+    [[noreturn]] inline auto fatalInvalidPositionalPath(const size_t pos) {
+        std::cerr << std::format(
+            "[Argon] Fatal: Invalid positional with position: {}. "
+            "Check to see if the specified position and templated type are correct and the correct function was called.\n",
+             pos);
+        std::terminate();
+    }
+
+    [[noreturn]] inline auto fatalInvalidPositionalPath(const FlagPath& path, const size_t pos) {
+        std::cerr << std::format(
+            "[Argon] Fatal: Invalid positional at path \"{}\" with position: {}. "
+            "Check to see if the specified position and templated type are correct and the correct function was called.\n",
+             path.toString(), pos);
+        std::terminate();
+    }
+
+    [[noreturn]] inline auto fatalInvalidMultiPositional() {
+        std::cerr <<
+            "[Argon] Fatal: Invalid multi-positional. "
+            "Check to see if the multi-positional was set, the templated type are correct, and the correct function was called.";
+        std::terminate();
+    }
+
+    [[noreturn]] inline auto fatalInvalidMultiPositional(const FlagPath& path) {
+        std::cerr << std::format(
+            "[Argon] Fatal: Invalid multi-positional at path \"{}\". "
+            "Check to see if the multi-positional was set, the specified path and templated type are correct, and the correct function was called. \n",
+             path.toString());
+        std::terminate();
+    }
 }
 
 //---------------------------------------------------Implementations----------------------------------------------------

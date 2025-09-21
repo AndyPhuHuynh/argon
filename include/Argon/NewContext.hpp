@@ -9,6 +9,8 @@
 #include "Argon/Config/Config.hpp"
 #include "Argon/Options/NewOption.hpp"
 #include "Argon/Options/NewMultiOption.hpp"
+#include "Argon/Options/NewMultiPositional.hpp"
+#include "Argon/Options/NewPositional.hpp"
 
 namespace Argon {
     class NewOptionGroup;
@@ -19,9 +21,8 @@ namespace Argon::detail {
         std::vector<std::unique_ptr<ISingleOption>> m_options;
         std::vector<std::unique_ptr<IMultiOption>> m_multiOptions;
         std::vector<std::unique_ptr<NewOptionGroup>> m_groups;
-        // Multi options
-        // Multi positional
-        // Positionals
+        std::vector<std::unique_ptr<IPositional>> m_positionals;
+        std::unique_ptr<IMultiPositional> m_multiPositional;
     public:
         Config config;
 
@@ -42,10 +43,27 @@ namespace Argon::detail {
             std::is_rvalue_reference_v<T&&>)
         auto addOption(T&& option) -> void;
         auto addOption(NewOptionGroup&& option) -> void;
+        template <typename T> requires (
+            std::is_base_of_v<Argon::detail::IPositional, std::remove_cvref_t<T>> &&
+            std::is_rvalue_reference_v<T&&>)
+        auto addOption(T&& option) -> void;
+        template <typename T> requires (
+            std::is_base_of_v<Argon::detail::IMultiPositional, std::remove_cvref_t<T>> &&
+            std::is_rvalue_reference_v<T&&>)
+        auto addOption(T&& option) -> void;
 
         [[nodiscard]] auto getSingleOption(const FlagPath& flag) const -> ISingleOption *;
         [[nodiscard]] auto getMultiOption(const FlagPath& flag) const -> IMultiOption *;
         [[nodiscard]] auto getOptionGroup(const FlagPath& flag) const -> NewOptionGroup *;
+        [[nodiscard]] auto getPositional(size_t pos) const -> IPositional *;
+        [[nodiscard]] auto getPositional(const FlagPath& groupPath, size_t pos) const -> IPositional *;
+        [[nodiscard]] auto getMultiPositional() const -> IMultiPositional *;
+        [[nodiscard]] auto getMultiPositional(const FlagPath& groupPath) const -> IMultiPositional *;
+
+        [[nodiscard]] auto getSingleOptions() const -> const std::vector<std::unique_ptr<ISingleOption>>&;
+        [[nodiscard]] auto getMultiOptions() const -> const std::vector<std::unique_ptr<IMultiOption>>&;
+        [[nodiscard]] auto getOptionGroups() const -> const std::vector<std::unique_ptr<NewOptionGroup>>&;
+        [[nodiscard]] auto getPositionals() const -> const std::vector<std::unique_ptr<IPositional>>&;
 
         [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
     private:
@@ -76,13 +94,27 @@ inline auto Argon::detail::NewContext::addOption(NewOptionGroup&& option) -> voi
     m_groups.emplace_back(std::make_unique<NewOptionGroup>(std::move(option)));
 }
 
+template<typename T> requires (
+    std::is_base_of_v<Argon::detail::IPositional, std::remove_cvref_t<T>> &&
+    std::is_rvalue_reference_v<T&&>)
+auto Argon::detail::NewContext::addOption(T&& option) -> void {
+    m_positionals.emplace_back(std::make_unique<std::remove_cvref_t<T>>(std::forward<T>(option)));
+}
+
+template<typename T> requires (
+    std::is_base_of_v<Argon::detail::IMultiPositional, std::remove_cvref_t<T>> &&
+    std::is_rvalue_reference_v<T&&>)
+auto Argon::detail::NewContext::addOption(T&& option) -> void {
+    m_multiPositional = std::make_unique<std::remove_cvref_t<T>>(std::forward<T>(option));
+}
+
 inline auto Argon::detail::NewContext::getSingleOption(const FlagPath& flag) const -> ISingleOption * {
     const NewOptionGroup *group = resolveGroupPath(flag);
     const auto& options = group == nullptr ? m_options : group->getContext().m_options;
     const auto it = std::ranges::find_if(options, [&flag](const auto& option) -> bool {
         return option->getFlag().containsFlag(flag.flag);
     });
-    if (it == m_options.end()) {
+    if (it == options.end()) {
         return nullptr;
     }
     return it->get();
@@ -94,7 +126,7 @@ inline auto Argon::detail::NewContext::getMultiOption(const FlagPath& flag) cons
     const auto it = std::ranges::find_if(options, [&flag](const auto& option) -> bool {
         return option->getFlag().containsFlag(flag.flag);
     });
-    if (it == m_multiOptions.end()) {
+    if (it == options.end()) {
         return nullptr;
     }
     return it->get();
@@ -106,10 +138,52 @@ inline auto Argon::detail::NewContext::getOptionGroup(const FlagPath& flag) cons
     const auto it = std::ranges::find_if(groups, [&flag](const auto& group) -> bool {
         return group->getFlag().containsFlag(flag.flag);
     });
-    if (it == m_groups.end()) {
+    if (it == groups.end()) {
         return nullptr;
     }
     return it->get();
+}
+
+inline auto Argon::detail::NewContext::getPositional(const size_t pos) const -> IPositional * {
+    return pos >= m_positionals.size() ? nullptr : m_positionals[pos].get();
+}
+
+
+inline auto Argon::detail::NewContext::getPositional(const FlagPath& groupPath, const size_t pos) const -> IPositional * {
+    const NewOptionGroup *group = getOptionGroup(groupPath);
+    if (group == nullptr) {
+        return nullptr;
+    }
+    const auto& context = group->getContext();
+    return pos >= context.getPositionals().size() ? nullptr : context.getPositionals()[pos].get();
+}
+
+inline auto Argon::detail::NewContext::getMultiPositional() const -> IMultiPositional * {
+    return m_multiPositional.get();
+}
+
+inline auto Argon::detail::NewContext::getMultiPositional(const FlagPath& groupPath) const -> IMultiPositional * {
+    const NewOptionGroup *group = getOptionGroup(groupPath);
+    if (group == nullptr) {
+        return nullptr;
+    }
+    return group->getContext().m_multiPositional.get();
+}
+
+inline auto Argon::detail::NewContext::getSingleOptions() const -> const std::vector<std::unique_ptr<ISingleOption>>& {
+    return m_options;
+}
+
+inline auto Argon::detail::NewContext::getMultiOptions() const -> const std::vector<std::unique_ptr<IMultiOption>>& {
+    return m_multiOptions;
+}
+
+inline auto Argon::detail::NewContext::getOptionGroups() const -> const std::vector<std::unique_ptr<NewOptionGroup>>& {
+    return m_groups;
+}
+
+inline auto Argon::detail::NewContext::getPositionals() const -> const std::vector<std::unique_ptr<IPositional>>& {
+    return m_positionals;
 }
 
 inline auto Argon::detail::NewContext::containsFlag(const std::string_view flag) const -> bool {

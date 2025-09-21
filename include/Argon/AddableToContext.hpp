@@ -15,8 +15,10 @@ namespace Argon::detail {
     concept AddableToContext =
         std::is_rvalue_reference_v<T&&> && (
             std::is_base_of_v<ISingleOption, std::remove_cvref_t<T>> ||
+            std::is_base_of_v<IMultiOption, std::remove_cvref_t<T>> ||
             std::is_base_of_v<NewOptionGroup, std::remove_cvref_t<T>> ||
-            std::is_base_of_v<IMultiOption, std::remove_cvref_t<T>>
+            std::is_base_of_v<IPositional, std::remove_cvref_t<T>> ||
+            std::is_base_of_v<IMultiPositional, std::remove_cvref_t<T>>
         );
 }
 

@@ -5,8 +5,8 @@
 #include <string_view>
 #include <typeindex>
 
-#include "Argon/Flag.hpp"
 #include "Argon/Config/Types.hpp"
+#include "Argon/Flag.hpp"
 #include "Argon/Traits.hpp"
 
 namespace Argon {

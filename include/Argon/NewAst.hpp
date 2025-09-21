@@ -30,6 +30,8 @@ namespace Argon::detail {
 
     struct NewPositionalAst {
         AstValue value;
+
+        auto analyze(const NewContext& parentContext, ErrorGroup& analysisErrors, size_t position) const -> void;
     };
 
     struct NewOptionGroupAst;
@@ -85,6 +87,34 @@ inline auto Argon::detail::NewMultiOptionAst::analyze(const NewContext& parentCo
     }
 }
 
+inline auto Argon::detail::NewPositionalAst::analyze(
+    const NewContext& parentContext, ErrorGroup& analysisErrors, size_t position
+) const -> void {
+    if (const auto maxSize = parentContext.getPositionals().size(); position >= maxSize) {
+        if (IMultiPositional *opt = parentContext.getMultiPositional(); opt != nullptr) {
+            if (const std::string errorMsg = opt->setValue(parentContext.config, opt->getName(), value.value); !errorMsg.empty()) {
+                analysisErrors.addErrorMessage(errorMsg, value.pos, ErrorType::Analysis_ConversionError);
+            }
+            return;
+        }
+        analysisErrors.addErrorMessage(
+            std::format(R"(Too many positional arguments: "{}" was parsed as positional argument #{}, but a max of )"
+                R"({} positional arguments are allowed.)",
+                value.value, position, maxSize), value.pos, ErrorType::Analysis_UnexpectedToken);
+        return;
+    }
+
+    IPositional *opt = parentContext.getPositional(position);
+    if (!opt) {
+        analysisErrors.addErrorMessage(std::format(R"(Unexpected token: "{}". )", value.value), value.pos, ErrorType::Analysis_UnexpectedToken);
+        return;
+    }
+
+    if (const std::string errorMsg = opt->setValue(parentContext.config, opt->getName(), value.value); !errorMsg.empty()) {
+        analysisErrors.addErrorMessage(errorMsg, value.pos, ErrorType::Analysis_ConversionError);
+    }
+}
+
 inline auto Argon::detail::AstGroupContext::addOption(std::unique_ptr<SingleOptionAst> option) -> void {
     options.emplace_back(std::move(option));
 }
@@ -111,9 +141,12 @@ inline auto Argon::detail::AstGroupContext::analyze(const NewContext& parentCont
     for (const auto& group : groups) {
         group->analyze(parentContext, analysisErrors);
     }
+    for (const auto& [i, positional] : std::views::enumerate(positionals)) {
+        positional->analyze(parentContext, analysisErrors, static_cast<size_t>(i));
+    }
 }
 
-inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentContext,ErrorGroup& analysisErrors) const -> void {
+inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentContext,ErrorGroup& analysisErrors) const -> void { // NOLINT(misc-no-recursion)
     const NewOptionGroup *group = parentContext.getOptionGroup({flag.value});
     if (!group) {
         analysisErrors.addErrorMessage(std::format(R"(Unknown option group: "{}")", flag.value), flag.pos, ErrorType::Analysis_UnknownFlag);

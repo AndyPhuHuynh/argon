@@ -16,17 +16,17 @@ namespace Argon {
         template <typename ValueType>
         auto getAll(const FlagPath& flagPath) -> const std::vector<ValueType>&;
 
-        // template <typename ValueType, size_t Pos>
-        // auto getPos() -> const ValueType&;
-        //
-        // template <typename ValueType, size_t Pos>
-        // auto getPos(const FlagPath& flagPath) -> const ValueType&;
-        //
-        // template <typename ContainerType>
-        // auto getAllPos() -> const ContainerType&;
-        //
-        // template <typename ContainerType>
-        // auto getAllPos(const FlagPath& flagPath) -> const ContainerType&;
+        template <typename ValueType, size_t Pos>
+        auto getPos() -> const ValueType&;
+
+        template <typename ValueType, size_t Pos>
+        auto getPos(const FlagPath& flagPath) -> const ValueType&;
+
+        template <typename ValueType>
+        auto getAllPos() -> const std::vector<ValueType>&;
+
+        template <typename ValueType>
+        auto getAllPos(const FlagPath& flagPath) -> const std::vector<ValueType>&;
     };
 }
 
@@ -48,24 +48,40 @@ auto Argon::ContextView::getAll(const FlagPath& flagPath) -> const std::vector<V
     detail::fatalInvalidFlagPath(flagPath);
 }
 
-// template<typename ValueType, size_t Pos>
-// auto Argon::ContextView::getPos() -> const ValueType& {
-//     // return m_context.getPositionalValue<ValueType, Pos>();
-// }
-//
-// template<typename ValueType, size_t Pos>
-// auto Argon::ContextView::getPos(const FlagPath& flagPath) -> const ValueType& {
-//     // return m_context.getPositionalValue<ValueType, Pos>(flagPath);
-// }
-//
-// template<typename ContainerType>
-// auto Argon::ContextView::getAllPos() -> const ContainerType& {
-//     // return m_context.getMultiPositionalValue<ContainerType>();
-// }
-//
-// template<typename ContainerType>
-// auto Argon::ContextView::getAllPos(const FlagPath& flagPath) -> const ContainerType& {
-//     // return m_context.getMultiPositionalValue<ContainerType>(flagPath);
-// }
+template<typename ValueType, size_t Pos>
+auto Argon::ContextView::getPos() -> const ValueType& {
+    detail::IPositional *opt = m_context.getPositional(Pos);
+    if (const auto cast = dynamic_cast<NewPositional<ValueType> *>(opt)) {
+        return cast->getValue();
+    }
+    detail::fatalInvalidPositionalPath(Pos);
+}
+
+template<typename ValueType, size_t Pos>
+auto Argon::ContextView::getPos(const FlagPath& flagPath) -> const ValueType& {
+    detail::IPositional *opt = m_context.getPositional(flagPath, Pos);
+    if (const auto cast = dynamic_cast<NewPositional<ValueType> *>(opt)) {
+        return cast->getValue();
+    }
+    detail::fatalInvalidPositionalPath(flagPath, Pos);
+}
+
+template<typename ValueType>
+auto Argon::ContextView::getAllPos() -> const std::vector<ValueType>& {
+    detail::IMultiPositional *opt = m_context.getMultiPositional();
+    if (const auto cast = dynamic_cast<NewMultiPositional<ValueType> *>(opt)) {
+        return cast->getValue();
+    }
+    detail::fatalInvalidMultiPositional();
+}
+
+template<typename ValueType>
+auto Argon::ContextView::getAllPos(const FlagPath& flagPath) -> const std::vector<ValueType>& {
+    detail::IMultiPositional *opt = m_context.getMultiPositional(flagPath);
+    if (const auto cast = dynamic_cast<NewMultiPositional<ValueType> *>(opt)) {
+        return cast->getValue();
+    }
+    detail::fatalInvalidMultiPositional(flagPath);
+}
 
 #endif // ARGON_CONTEXT_VIEW_HPP

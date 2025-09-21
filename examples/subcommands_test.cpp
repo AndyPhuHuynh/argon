@@ -60,7 +60,10 @@ int main() {
                 Argon::NewOption<std::string>()["--name"],
                 Argon::NewOption<std::string>()["--age"]
             )["--group"],
-            Argon::NewMultiOption<std::string>()[{"--friends"}]
+            Argon::NewMultiOption<std::string>()[{"--friends"}],
+            Argon::NewPositional<std::string>().withName("greeting"),
+            Argon::NewPositional<int>().withName("count"),
+            Argon::NewMultiPositional<int>().withName("numbers")
         }.withMain([](Argon::ContextView view) {
             std::cout << "Inside default command main\n";
             std::cout << "X: " << view.get<int>({"-x"}) << "\n";
@@ -72,10 +75,16 @@ int main() {
             for (const auto& f : view.getAll<std::string>({"--friends"})) {
                 std::cout << "    " << f << "\n";
             }
+            std::cout << "Greeting: " << view.getPos<std::string, 0>() << "\n";
+            std::cout << "Count:    " << view.getPos<int, 1>() << "\n";
+            std::cout << "Numbers:\n";
+            for (const auto& num : view.getAllPos<int>()) {
+                std::cout << "    " << num << "\n";
+            }
         })
     };
     // layer.run("coordinates region --country USA");
-    layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] --friends John Mary Sally Joshua");
+    layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] \"Hello world!\" 10 20 30 40 50 60 70 --friends John Mary Sally Joshua");
 
     if (layer.hasErrors()) {
         const auto& [validationErrors, syntaxErrors, analysisErrors] = layer.getErrors();

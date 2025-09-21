@@ -26,4 +26,5 @@ namespace Argon {
         }
     };
 }
+
 #endif // ARGON_OPTION_CHAR_BASE_INCLUDE

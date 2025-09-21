@@ -3,7 +3,6 @@
 
 #include "Argon/Flag.hpp"
 #include "Argon/Options/NewOptionDescription.hpp"
-#include "Argon/Options/OptionTypeExtensions.hpp"
 #include "Argon/Options/NewSetValue.hpp"
 
 namespace Argon::detail {
@@ -13,21 +12,24 @@ namespace Argon::detail {
           public virtual IOptionDescription {};
 };
 
+// Supress warning about dominance with diamond hierarchy
+#ifdef _MSC_VER
+#  pragma warning(push)
+#  pragma warning(disable: 4250)
+#endif
+
 namespace Argon {
     template <typename T>
     class NewMultiOption
         : public detail::IMultiOption,
           public HasFlag<NewMultiOption<T>>,
           public detail::SetMultiValueImpl<NewMultiOption<T>, T>,
-          public detail::OptionTypeExtensions<NewMultiOption<T>, T>,
-          public detail::OptionDescriptionImpl<NewMultiOption<T>> {
-        using detail::SetMultiValueImpl<NewMultiOption, T>::setValue;
-    protected:
-        auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> std::string override {
-            auto optionConfig = detail::getNewOptionConfig<NewMultiOption, T>(parserConfig, this);
-            return detail::SetMultiValueImpl<NewMultiOption, T>::setValue(optionConfig, flag, value);
-        }
-    };
+          public detail::OptionTypeExtensionsImpl<NewMultiOption<T>, T>,
+          public detail::OptionDescriptionImpl<NewMultiOption<T>> {};
 }
+
+#ifdef _MSC_VER
+#   pragma warning(pop)
+#endif
 
 #endif // ARGON_NEW_MULTI_OPTION_HPP
