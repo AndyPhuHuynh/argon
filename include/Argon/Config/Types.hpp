@@ -25,7 +25,6 @@ namespace Argon {
         BeforeFlags,
         AfterFlags,
     };
-
 } // End namespace Argon
 
 namespace Argon::detail {
@@ -60,6 +59,7 @@ namespace Argon::detail {
 
 } // End namespace Argon::detail
 
+//---------------------------------------------------Implementations----------------------------------------------------
 
 template<typename T> requires Argon::detail::is_non_bool_number<T>
 auto Argon::detail::IntegralBounds<T>::clone() const -> std::unique_ptr<IntegralBoundsBase> {

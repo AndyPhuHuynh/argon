@@ -2,6 +2,7 @@
 #define ARGON_CONTEXT_INCLUDE
 
 #include <ranges>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <vector>

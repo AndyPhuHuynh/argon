@@ -62,11 +62,9 @@ namespace Argon::detail {
             result.m_bounds.map[type] = bound->clone();
         }
 
-        std::vector<std::string_view> prefixViews;
-        for (const auto& s : childConfig.getFlagPrefixes()) {
-            prefixViews.push_back(s);
+        if (!childConfig.m_flagPrefixes.empty()) {
+            result.m_flagPrefixes = childConfig.m_flagPrefixes;
         }
-        result.m_flagPrefixes.assign(childConfig.m_flagPrefixes.begin(), childConfig.m_flagPrefixes.end());
         return result;
     }
 

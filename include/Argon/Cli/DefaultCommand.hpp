@@ -9,6 +9,7 @@
 #include "Argon/Error.hpp"
 #include "Argon/NewAstBuilder.hpp"
 #include "Argon/NewContext.hpp"
+#include "Argon/NewContextValidator.hpp"
 #include "Argon/Scanner.hpp"
 
 namespace Argon {
@@ -39,10 +40,9 @@ namespace Argon {
     };
 }
 
-#include "Argon/AstBuilder.hpp"
-#include "Argon/Context.hpp"
+// --------------------------------------------- Implementations -------------------------------------------------------
+
 #include "Argon/ContextView.hpp"
-#include "Argon/Options/IOption.hpp"
 
 template<Argon::detail::AddableToContext... Options>
 Argon::DefaultCommand::DefaultCommand(Options&&... options) {
@@ -59,17 +59,12 @@ inline auto Argon::DefaultCommand::withMain(const MainFn& mainFn) && -> DefaultC
     return std::move(*this);
 }
 
-inline auto Argon::DefaultCommand::validate(ErrorGroup&) const -> void {
-    // m_context->validateSetup(validationErrors);
+inline auto Argon::DefaultCommand::validate(ErrorGroup& validationErrors) const -> void {
+    detail::ContextValidator(m_context).validate(validationErrors);
 }
 
-inline auto Argon::DefaultCommand::resolveConfig(const Config *) -> void {
-    // TODO: NewContext config
-    // if (parentConfig == nullptr) {
-    //     m_config.resolveUseDefaults();
-    // } else {
-    //     m_config = detail::resolveConfig(*parentConfig, m_config);
-    // }
+inline auto Argon::DefaultCommand::resolveConfig(const Config *parentConfig) -> void {
+    m_context.resolveConfig(parentConfig);
 }
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {

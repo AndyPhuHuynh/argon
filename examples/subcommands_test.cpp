@@ -47,8 +47,30 @@ public:
     }
 };
 
+const auto mainCmd = [](Argon::ContextView view) {
+    std::cout << "Inside default command main\n";
+    std::cout << "X: " << view.get<int>({"-x"}) << "\n";
+    std::cout << "Y: " << view.get<int>({"-y"}) << "\n";
+    std::cout << "Z: " << view.get<int>({"-z"}) << "\n";
+    std::cout << "Name: " << view.get<std::string>({"--group", "--name"}) << "\n";
+    std::cout << "Age:  " << view.get<std::string>({"--group", "--age"}) << "\n";
+    std::cout << "Friends:\n";
+    for (const auto& f : view.getAll<std::string>({"--friends"})) {
+        std::cout << "    " << f << "\n";
+    }
+    std::cout << "Greeting: " << view.getPos<std::string, 0>() << "\n";
+    std::cout << "Count:    " << view.getPos<int, 1>() << "\n";
+    std::cout << "Numbers:\n";
+    for (const auto& num : view.getAllPos<int>()) {
+        std::cout << "    " << num << "\n";
+    }
+};
+
 int main() {
     auto layer = Argon::Cli{
+        Argon::Config{
+            Argon::SetFlagPrefixes{"/"}
+        },
         Argon::Subcommands{
             Coordinates{},
         },
@@ -64,27 +86,11 @@ int main() {
             Argon::NewPositional<std::string>().withName("greeting"),
             Argon::NewPositional<int>().withName("count"),
             Argon::NewMultiPositional<int>().withName("numbers")
-        }.withMain([](Argon::ContextView view) {
-            std::cout << "Inside default command main\n";
-            std::cout << "X: " << view.get<int>({"-x"}) << "\n";
-            std::cout << "Y: " << view.get<int>({"-y"}) << "\n";
-            std::cout << "Z: " << view.get<int>({"-z"}) << "\n";
-            std::cout << "Name: " << view.get<std::string>({"--group", "--name"}) << "\n";
-            std::cout << "Age:  " << view.get<std::string>({"--group", "--age"}) << "\n";
-            std::cout << "Friends:\n";
-            for (const auto& f : view.getAll<std::string>({"--friends"})) {
-                std::cout << "    " << f << "\n";
-            }
-            std::cout << "Greeting: " << view.getPos<std::string, 0>() << "\n";
-            std::cout << "Count:    " << view.getPos<int, 1>() << "\n";
-            std::cout << "Numbers:\n";
-            for (const auto& num : view.getAllPos<int>()) {
-                std::cout << "    " << num << "\n";
-            }
-        })
+        }.withMain(mainCmd)
     };
     // layer.run("coordinates region --country USA");
-    layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] \"Hello world!\" 10 20 30 40 50 60 70 --friends John Mary Sally Joshua");
+    layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] \"Hello world!\" 10 20 30 40 50 60 70 "
+              "--friends John Mary Sally Joshua -x 155 -- 80 90 100");
 
     if (layer.hasErrors()) {
         const auto& [validationErrors, syntaxErrors, analysisErrors] = layer.getErrors();
@@ -92,12 +98,4 @@ int main() {
         syntaxErrors.printErrors();
         analysisErrors.printErrors();
     }
-
-    // Argon::detail::NewContext newContext;
-    // newContext.addOption(Argon::NewOption<int>()["--intFlag"]);
-    //
-    // Argon::NewOptionGroup group{
-    //     Argon::NewOption<std::string>()["--group"],
-    //     Argon::NewOptionGroup{}
-    // };
 }

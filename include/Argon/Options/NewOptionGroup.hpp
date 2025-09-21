@@ -25,6 +25,7 @@ namespace Argon {
         auto withDescription(std::string_view description) & -> NewOptionGroup&;
         auto withDescription(std::string_view description) && -> NewOptionGroup&&;
 
+        [[nodiscard]] auto getContext() -> detail::NewContext&;
         [[nodiscard]] auto getContext() const -> const detail::NewContext&;
     };
 }
@@ -56,6 +57,10 @@ inline auto Argon::NewOptionGroup::withDescription(const std::string_view descri
 inline auto Argon::NewOptionGroup::withDescription(const std::string_view description) && -> NewOptionGroup&& {
     m_description = description;
     return std::move(*this);
+}
+
+inline auto Argon::NewOptionGroup::getContext() -> detail::NewContext& {
+    return *m_context;
 }
 
 inline auto Argon::NewOptionGroup::getContext() const -> const detail::NewContext& {

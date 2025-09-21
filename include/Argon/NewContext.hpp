@@ -66,6 +66,7 @@ namespace Argon::detail {
         [[nodiscard]] auto getPositionals() const -> const std::vector<std::unique_ptr<IPositional>>&;
 
         [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
+        auto resolveConfig(const Config *parentConfig) -> void;
     private:
         [[nodiscard]] static auto vectorContainsFlag(const auto& vec, std::string_view flag) -> bool;
         [[nodiscard]] auto resolveGroupPath(const FlagPath& flagPath) const -> NewOptionGroup *;
@@ -190,6 +191,17 @@ inline auto Argon::detail::NewContext::containsFlag(const std::string_view flag)
     return vectorContainsFlag(m_options, flag) ||
         vectorContainsFlag(m_groups, flag) ||
         vectorContainsFlag(m_multiOptions, flag);
+}
+
+inline auto Argon::detail::NewContext::resolveConfig(const Config *parentConfig) -> void { // NOLINT (misc-no-recursion)
+    if (parentConfig == nullptr) {
+        config.resolveUseDefaults();
+    } else {
+        config = detail::resolveConfig(*parentConfig, config);
+    }
+    for (const auto& group : m_groups) {
+        group->getContext().resolveConfig(&config);
+    }
 }
 
 auto Argon::detail::NewContext::vectorContainsFlag(const auto& vec, std::string_view flag) -> bool {

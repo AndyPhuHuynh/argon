@@ -34,6 +34,8 @@ namespace Argon {
     };
 }
 
+// --------------------------------------------- Implementations -------------------------------------------------------
+
 #include "Argon/Cli/ISubcommand.hpp"
 
 template<typename ... Args> requires(
