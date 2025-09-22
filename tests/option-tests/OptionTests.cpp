@@ -92,363 +92,43 @@ TEST_CASE("Basic option test 2", "[options]") {
     }
 }
 
-//
-// TEST_CASE("Multioption test 1", "[options][multi]") {
-//     std::array<int, 3> intArr{};
-//     std::vector<double> doubleVec;
-//
-//     Parser parser = MultiOption(&intArr)["-i"]["--ints"]
-//                   | MultiOption(&doubleVec)["-d"]["--doubles"];
-//
-//     const std::string input = "--ints 1 2 3 --doubles 4.0 5.5 6.7";
-//     parser.parse(input);
-//
-//     CHECK(!parser.hasErrors());
-//     CHECK(intArr[0] == 1);
-//     CHECK(intArr[1] == 2);
-//     CHECK(intArr[2] == 3);
-//     REQUIRE(doubleVec.size() == 3);
-//     CHECK(doubleVec[0] == 4.0);
-//     CHECK(doubleVec[1] == 5.5);
-//     CHECK(doubleVec[2] == 6.7);
-// }
-//
-// TEST_CASE("Multioption inside group", "[options][multi][option-group]") {
-//     std::array<int, 3> intArr{};
-//     std::vector<double> doubleVec;
-//
-//     Parser parser = MultiOption(&intArr)["-i"]["--ints"]
-//                     | (
-//                         OptionGroup()["--group"]
-//                         + MultiOption(&doubleVec)["-d"]["--doubles"]
-//                     );
-//
-//     const std::string input = "--ints 1 2 3 --group [--doubles 4.0 5.5 6.7]";
-//     parser.parse(input);
-//
-//     CHECK(!parser.hasErrors());
-//     CHECK(intArr[0] == 1);
-//     CHECK(intArr[1] == 2);
-//     CHECK(intArr[2] == 3);
-//     REQUIRE(doubleVec.size() == 3);
-//     CHECK(doubleVec[0] == 4.0);
-//     CHECK(doubleVec[1] == 5.5);
-//     CHECK(doubleVec[2] == 6.7);
-// }
+TEST_CASE("Repeated flags", "[options]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewOption<int>()["-x"],
+            NewOption<int>()["-y"],
+            NewOption<int>()["-z"],
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    cli.run("-x 10 -x 20 -x 30 -y 10 -y 20 -z 10");
+    CHECK(!cli.hasErrors());
+    CHECK(ctx.get<int>({"-x"}) == 30);
+    CHECK(ctx.get<int>({"-y"}) == 20);
+    CHECK(ctx.get<int>({"-z"}) == 10);
+}
 
-// TEST_CASE("Multioption default values") {
-//     auto parser = MultiOption<std::array<int, 2>>({1, 2})["--array"]
-//                 | MultiOption<std::vector<int>>({1, 2, 3, 4})["--vector"];
-//
-//     const auto& array  = parser.getMultiValue<std::array<int, 2>>(FlagPath{"--array"});
-//     const auto& vector = parser.getMultiValue<std::vector<int>>(FlagPath{"--vector"});
-//
-//     SECTION("Nothing set") {
-//         CHECK(!parser.hasErrors());
-//         CHECK(array[0] == 1);   CHECK(array[1] == 2);
-//         REQUIRE(vector.size() == 4);
-//         CHECK(vector[0] == 1);  CHECK(vector[1] == 2);
-//         CHECK(vector[2] == 3);  CHECK(vector[3] == 4);
-//     }
-//
-//     SECTION("Values set") {
-//         parser.parse("--array -1 -2 --vector -1 -2");
-//         CHECK(!parser.hasErrors());
-//         CHECK(array[0] == -1);  CHECK(array[1] == -2);
-//         REQUIRE(vector.size() == 2);
-//         CHECK(vector[0] == -1); CHECK(vector[1] == -2);
-//     }
-// }
-//
-// TEST_CASE("Booleans options", "[options]") {
-//     bool debug = false, verbose = false, nestedDebug = false, nestedVerbose = false;
-//     int x, y, z;
-//
-//     auto parser = Option(&debug)["--debug"]
-//                 | Option(&verbose)["--verbose"]
-//                 | Option(&x)["-x"]
-//                 | (
-//                     OptionGroup()["--group"]
-//                     + Option(&nestedDebug)["--debug"]
-//                     + Option(&nestedVerbose)["--verbose"]
-//                     + Option(&y)["-y"]
-//                 )
-//                 | Option(&z)["-z"];
-//
-//     SECTION("No explicit flags by themselves") {
-//         parser.parse("--debug --verbose");
-//
-//         CHECK(!parser.hasErrors());
-//         CHECK(debug   == true);
-//         CHECK(verbose == true);
-//     }
-//
-//     SECTION("No explicit flags with other values") {
-//         parser.parse("--debug -x 10 --verbose -z 30");
-//
-//         CHECK(!parser.hasErrors());
-//         CHECK(debug   == true);
-//         CHECK(verbose == true);
-//         CHECK(x       == 10);
-//         CHECK(z       == 30);
-//     }
-//
-//     SECTION("Both explicit") {
-//         parser.parse("--debug true --verbose=true");
-//
-//         CHECK(!parser.hasErrors());
-//         CHECK(debug   == true);
-//         CHECK(verbose == true);
-//     }
-//
-//     SECTION("Only one explicit") {
-//         parser.parse("--debug -x 30 --verbose=true");
-//
-//         CHECK(!parser.hasErrors());
-//         CHECK(debug   == true);
-//         CHECK(verbose == true);
-//         CHECK(x       == 30);
-//     }
-//
-//     SECTION("Nested implicit") {
-//         parser.parse("--debug true --group [--debug=true --verbose -y 20]");
-//
-//         CHECK(!parser.hasErrors());
-//         CHECK(debug         == true);
-//         CHECK(verbose       == false);
-//         CHECK(nestedDebug   == true);
-//         CHECK(nestedVerbose == true);
-//         CHECK(y             == 20);
-//     }
-//
-//     SECTION("True/False") {
-//         parser.parse("--debug=true --verbose=false");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("1/0") {
-//         parser.parse("--debug=1 --verbose=0");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("Yes/No") {
-//         parser.parse("--debug=yes --verbose=no");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("On/Off") {
-//         parser.parse("--debug=on --verbose=off");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("y/n") {
-//         parser.parse("--debug=y --verbose=n");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("t/f") {
-//         parser.parse("--debug=t --verbose=f");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("Enable/Disable") {
-//         parser.parse("--debug=enable --verbose=disable");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-//
-//     SECTION("Enabled/Disabled") {
-//         parser.parse("--debug=ENABLED --verbose=DISABLED");
-//         CHECK(debug     == true);
-//         CHECK(verbose   == false);
-//     }
-// }
-//
-// TEST_CASE("Repeated flags", "[options]") {
-//     int x, y, z;
-//     auto parser = Option(&x)["-x"] | Option(&y)["-y"] | Option(&z)["-z"];
-//     parser.parse("-x 10 -x 20 -x 30 -y 10 -y 20 -z 10");
-//
-//     CHECK(!parser.hasErrors());
-//     CHECK(x == 30);
-//     CHECK(y == 20);
-//     CHECK(z == 10);
-// }
-//
-// TEST_CASE("Default conversion table", "[options]") {
-//     int i;
-//     float f;
-//     double d;
-//     Student s;
-//
-//     auto parser = Option(&i)["--int"]
-//                 | Option(&f)["--float"]
-//                 | Option(&d)["--double"]
-//                 | Option(&s)["--student"];
-//
-//     parser.getConfig().registerConversionFn<int>([](std::string_view, int *out) {
-//         *out = 1; return true;
-//     });
-//     parser.getConfig().registerConversionFn<float>([](std::string_view, float *out) {
-//         *out = 2.0; return true;
-//     });
-//     parser.getConfig().registerConversionFn<double>([](std::string_view, double *out) {
-//         *out = 3.0; return true;
-//     });
-//     parser.getConfig().registerConversionFn<Student>([](std::string_view, Student *out) {
-//         *out = { .name = "Joshua", .age = 20 }; return true;
-//     });
-//     parser.parse("--int hi --float hello --double world --student :D");
-//
-//     CHECK(!parser.hasErrors());
-//     CHECK(i == 1);
-//     CHECK(f == Catch::Approx(2.0).epsilon(1e-6));
-//     CHECK(d == Catch::Approx(3.0).epsilon(1e-6));
-//     CHECK(s.name == "Joshua");
-//     CHECK(s.age == 20);
-// }
-//
-// TEST_CASE("Setting multiple flags with initializer list", "[options]") {
-//     int i; float f;
-//     auto parser = Option(&i)[{"--integer", "--int", "-i"}]
-//                 | Option(&f)[{"--float",   "--flo", "-f"}];
-//     SECTION("Flag 1") {
-//         const std::string input = "--integer 1 --float 2";
-//         parser.parse(input);
-//     }
-//     SECTION("Flag 2") {
-//         const std::string input = "--int 1 --flo 2";
-//         parser.parse(input);
-//     }
-//     SECTION("Flag 3") {
-//         const std::string input = "-i 1 -f 2";
-//         parser.parse(input);
-//     }
-//     CHECK(i == 1);
-//     CHECK(f == Catch::Approx(2.0).epsilon(1e-6));
-// }
+TEST_CASE("Setting multiple flags with initializer list", "[options]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewOption<int>()[{"--integer", "--int", "-i"}],
+            NewOption<float>()[{"--float", "--flo", "-f"}],
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    SECTION("Flag 1") {
+        cli.run("--integer 1 --float 2");
+    }
+    SECTION("Flag 2") {
+        cli.run("--int 1 --flo 2");
+    }
+    SECTION("Flag 3") {
+        cli.run("-i 1 -f 2");
+    }
+    CHECK(ctx.get<int>({"-i"}) == 1);
+    CHECK(ctx.get<float>({"-f"}) == Catch::Approx(2.0).epsilon(1e-6));
+}
 
-// TEST_CASE("Ascii CharMode", "[options][char]") {
-//     using namespace Argon;
-//     char c; signed char sc; unsigned char uc;
-//     auto parser = Option(&c)["-c"]
-//                 | Option(&sc)["-sc"]
-//                 | Option(&uc)["-uc"];
-//     parser.getConfig().setDefaultCharMode(CharMode::ExpectAscii);
-//
-//     SECTION("Test 1") {
-//         parser.parse("-c a -sc b -uc c");
-//         CHECK(!parser.hasErrors());
-//         CHECK(c == 'a'); CHECK(sc == 'b'); CHECK(uc == 'c');
-//     }
-//
-//     SECTION("Test 2") {
-//         parser.parse("-c 'd' -sc 'e' -uc 'f'");
-//         CHECK(!parser.hasErrors());
-//         CHECK(c == 'd'); CHECK(sc == 'e'); CHECK(uc == 'f');
-//     }
-//
-//     SECTION("Test 3") {
-//         parser.parse(R"(-c "g" -sc "h" -uc "i")");
-//         CHECK(!parser.hasErrors());
-//         CHECK(c == 'g'); CHECK(sc == 'h'); CHECK(uc == 'i');
-//     }
-// }
-//
-// TEST_CASE("CharMode with MultiOption array", "[options][multi][char][array]") {
-//     using namespace Argon;
-//     std::array<char, 3> chars{};
-//     std::array<signed char, 3> signedChars{};
-//     std::array<unsigned char, 3> unsignedChars{};
-//
-//     auto parser = MultiOption(&chars)["--chars"]
-//                 | MultiOption(&signedChars)["--signed"]
-//                 | MultiOption(&unsignedChars)["--unsigned"];
-//     SECTION("Expect ASCII") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectAscii);
-//         parser.parse("--chars a b c --signed d e f --unsigned g h i");
-//         CHECK(!parser.hasErrors());
-//         CHECK(chars[0]         == 'a'); CHECK(chars[1]         == 'b'); CHECK(chars[2]         == 'c');
-//         CHECK(signedChars[0]   == 'd'); CHECK(signedChars[1]   == 'e'); CHECK(signedChars[2]   == 'f');
-//         CHECK(unsignedChars[0] == 'g'); CHECK(unsignedChars[1] == 'h'); CHECK(unsignedChars[2] == 'i');
-//     }
-//
-//     SECTION("Expect integers") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectInteger);
-//         parser.parse("--chars 10 20 30 --signed 40 50 60 --unsigned 70 80 90");
-//         CHECK(!parser.hasErrors());
-//         CHECK(chars[0]         == 10); CHECK(chars[1]         == 20); CHECK(chars[2]         == 30);
-//         CHECK(signedChars[0]   == 40); CHECK(signedChars[1]   == 50); CHECK(signedChars[2]   == 60);
-//         CHECK(unsignedChars[0] == 70); CHECK(unsignedChars[1] == 80); CHECK(unsignedChars[2] == 90);
-//     }
-// }
-//
-// TEST_CASE("CharMode with MultiOption vector", "[options][multi][char][vector]") {
-//     using namespace Argon;
-//     std::vector<char> chars;
-//     std::vector<signed char> signedChars;
-//     std::vector<unsigned char> unsignedChars;
-//
-//     auto parser = MultiOption(&chars)["--chars"]
-//                 | MultiOption(&signedChars)["--signed"]
-//                 | MultiOption(&unsignedChars)["--unsigned"];
-//     SECTION("Expect ASCII") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectAscii);
-//         parser.parse("--chars a b c --signed d e f --unsigned g h i");
-//         CHECK(!parser.hasErrors());
-//         REQUIRE(chars.size() == 3); REQUIRE(signedChars.size() == 3); REQUIRE(unsignedChars.size() == 3);
-//         CHECK(chars[0]         == 'a'); CHECK(chars[1]         == 'b'); CHECK(chars[2]         == 'c');
-//         CHECK(signedChars[0]   == 'd'); CHECK(signedChars[1]   == 'e'); CHECK(signedChars[2]   == 'f');
-//         CHECK(unsignedChars[0] == 'g'); CHECK(unsignedChars[1] == 'h'); CHECK(unsignedChars[2] == 'i');
-//     }
-//
-//     SECTION("Expect integers") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectInteger);
-//         parser.parse("--chars 10 20 30 --signed 40 50 60 --unsigned 70 80 90");
-//         CHECK(!parser.hasErrors());
-//         REQUIRE(chars.size() == 3); REQUIRE(signedChars.size() == 3); REQUIRE(unsignedChars.size() == 3);
-//         CHECK(chars[0]         == 10); CHECK(chars[1]         == 20); CHECK(chars[2]         == 30);
-//         CHECK(signedChars[0]   == 40); CHECK(signedChars[1]   == 50); CHECK(signedChars[2]   == 60);
-//         CHECK(unsignedChars[0] == 70); CHECK(unsignedChars[1] == 80); CHECK(unsignedChars[2] == 90);
-//     }
-// }
-//
-// TEST_CASE("Parsing setCharMode", "[options][positional][char]") {
-//     using namespace Argon;
-//     char cOpt; signed char scOpt; unsigned char ucOpt;
-//     char cPos; signed char scPos; unsigned char ucPos;
-//     auto parser = Option(&cOpt)["-c"]
-//                 | Option(&scOpt)["-sc"]
-//                 | Option(&ucOpt)["-uc"]
-//                 | Positional(&cPos)
-//                 | Positional(&scPos)
-//                 | Positional(&ucPos);
-//     SECTION("Ascii correct") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectAscii);
-//         parser.parse("a -c  a "
-//                      "b -sc b "
-//                      "c -uc c");
-//         CHECK(!parser.hasErrors());
-//         CHECK(cOpt == 'a'); CHECK(scOpt == 'b'); CHECK(ucOpt == 'c');
-//         CHECK(cPos == 'a'); CHECK(scPos == 'b'); CHECK(ucPos == 'c');
-//     }
-//     SECTION("Integer correct") {
-//         parser.getConfig().setDefaultCharMode(CharMode::ExpectInteger);
-//         parser.parse("1 -c  2 "
-//                      "3 -sc 4 "
-//                      "5 -uc 6");
-//         CHECK(!parser.hasErrors());
-//         CHECK(cOpt == 2); CHECK(scOpt == 4); CHECK(ucOpt == 6);
-//         CHECK(cPos == 1); CHECK(scPos == 3); CHECK(ucPos == 5);
-//     }
-// }
-//
 // TEST_CASE("Option group config", "[options][option-group][config]") {
 //     char topLevelChar; int topLevelInt; std::string topLevelString;
 //     char oneLevelChar; int oneLevelInt; std::string oneLevelString;

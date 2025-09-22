@@ -25,7 +25,8 @@ namespace Argon {
           public HasFlag<NewMultiOption<T>>,
           public detail::SetMultiValueImpl<NewMultiOption<T>, T>,
           public detail::OptionTypeExtensionsImpl<NewMultiOption<T>, T>,
-          public detail::OptionDescriptionImpl<NewMultiOption<T>> {};
+          public detail::OptionDescriptionImpl<NewMultiOption<T>> {
+    };
 }
 
 #ifdef _MSC_VER

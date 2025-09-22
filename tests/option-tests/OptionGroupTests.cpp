@@ -1,3 +1,4 @@
+#include "catch2/catch_approx.hpp"
 #include "catch2/catch_test_macros.hpp"
 
 #include "Argon/Cli/Cli.hpp"
@@ -81,4 +82,27 @@ TEST_CASE("Nested option groups", "[option-group]") {
         CHECK(ctx.get<std::string>({"--degrees", "--instruments", "--main"}) == "default");
         CHECK(ctx.get<std::string>({"--degrees", "--instruments", "--side"}) == "default");
     }
+}
+
+TEST_CASE("Multioption inside group", "[options][multi][option-group]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewMultiOption<int>()["--ints"],
+            NewOptionGroup(
+                NewMultiOption<double>()["--doubles"]
+            )["--group"]
+        }.withMain([&ctx](const ContextView innerCtx) {
+            ctx = innerCtx;
+        })
+    };
+
+    cli.run("--ints 1 2 3 --group [--doubles 4.0 5.5 6.7]");
+    CHECK(!cli.hasErrors());
+    CHECK(ctx.getAll<int>({"--ints"}) == std::vector<int>{1, 2, 3});
+    const auto& doubles = ctx.getAll<double>({"--group", "--doubles"});
+    CHECK(doubles.size() == 3);
+    CHECK(doubles[0] == Catch::Approx(4.0).epsilon(1e-6));
+    CHECK(doubles[1] == Catch::Approx(5.5).epsilon(1e-6));
+    CHECK(doubles[2] == Catch::Approx(6.7).epsilon(1e-6));
 }

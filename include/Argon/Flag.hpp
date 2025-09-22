@@ -10,7 +10,6 @@
 #include <vector>
 
 namespace Argon {
-
     struct Flag;
     struct FlagPathWithAlias;
     struct FlagPath;
@@ -79,7 +78,6 @@ namespace Argon {
     template <typename Derived>
     class HasFlag : public virtual IFlag {
         auto applySetFlag(std::string_view flag) -> void;
-        auto applySetFlag(std::initializer_list<std::string_view> flags) -> void;
     public:
         auto operator[](std::string_view flag) & -> Derived&;
         auto operator[](std::string_view flag) && -> Derived&&;
@@ -323,12 +321,14 @@ inline auto IFlag::getFlag() const -> const Flag& {
 template<typename Derived>
 auto HasFlag<Derived>::applySetFlag(std::string_view flag) -> void {
     if (flag.empty()) {
-        throw std::invalid_argument("Argon Error: Flag has to be at least one character long");
+        std::cerr << "[Argon] Error: Flag has to be at least one character long";
+        std::terminate();
     }
     if (const auto invalidChar = containsInvalidFlagCharacters(flag); invalidChar.has_value()) {
-        throw std::invalid_argument(
-            std::format("Argon Error: Flag cannot contain the following invalid character: {}",
-            getStringReprForInvalidChar(*invalidChar)));
+        std::cerr <<
+            std::format("[Argon] Error: Flag \"{}\" cannot contain the following invalid character: {}",
+            flag, getStringReprForInvalidChar(*invalidChar));
+        std::terminate();
     }
     if (m_flag.mainFlag.empty()) {
         m_flag.mainFlag = flag;
@@ -338,16 +338,6 @@ auto HasFlag<Derived>::applySetFlag(std::string_view flag) -> void {
 }
 
 template<typename Derived>
-auto HasFlag<Derived>::applySetFlag(const std::initializer_list<std::string_view> flags) -> void {
-    if (flags.size() <= 0) {
-        throw std::invalid_argument("Argon Error: Operator [] expects at least one flag");
-    }
-    for (const auto& flag : flags) {
-        applySetFlag(flag);
-    }
-}
-
-template <typename Derived>
 auto HasFlag<Derived>::operator[](const std::string_view flag) & -> Derived& {
     applySetFlag(flag);
     return static_cast<Derived&>(*this);
@@ -361,16 +351,19 @@ auto HasFlag<Derived>::operator[](const std::string_view flag) && -> Derived&& {
 
 template<typename Derived>
 auto HasFlag<Derived>::operator[](const std::initializer_list<std::string_view> flags) & -> Derived& {
-    applySetFlag(flags);
+    for (const auto flag : flags) {
+        applySetFlag(flag);
+    }
     return static_cast<Derived&>(*this);
 }
 
 template<typename Derived>
 auto HasFlag<Derived>::operator[](const std::initializer_list<std::string_view> flags) && -> Derived&& {
-    applySetFlag(flags);
+    for (const auto flag : flags) {
+        applySetFlag(flag);
+    }
     return static_cast<Derived&&>(*this);
 }
-
 
 } // End namespace Argon
 

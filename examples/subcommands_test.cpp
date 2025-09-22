@@ -12,7 +12,7 @@ public:
         return Argon::CliLayer{
             Argon::DefaultCommand{
                 Argon::NewOption<std::string>()["--country"]
-            }.withMain([](Argon::ContextView ctx) {
+            }.withMain([](const Argon::ContextView ctx) {
                 std::cout << "Region: " << ctx.get<std::string>({"--country"}) << "\n";
             })
         };

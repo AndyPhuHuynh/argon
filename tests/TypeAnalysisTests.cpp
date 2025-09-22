@@ -172,3 +172,198 @@ TEST_CASE("Multioption user defined type", "[options][multi][custom-type]") {
     CHECK(students[1] == Student{"John", 2});
     CHECK(students[2] == Student{"Mary", 3});
 }
+
+TEST_CASE("Booleans options", "[options][bool]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewOption<bool>()["--debug"],
+            NewOption<bool>()["--verbose"],
+            NewOption<int>()["-x"],
+            NewOptionGroup(
+                NewOption<bool>()["--debug"],
+                NewOption<bool>()["--verbose"],
+                NewOption<int>()["-y"]
+            )["--group"],
+            NewOption<int>()["-z"]
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+
+    SECTION("No explicit flags by themselves") {
+        cli.run("--debug --verbose");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == true);
+    }
+
+    SECTION("No explicit flags with other values") {
+        cli.run("--debug -x 10 --verbose -z 30");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == true);
+        CHECK(ctx.get<int>({"-x"}) == 10);
+        CHECK(ctx.get<int>({"-z"}) == 30);
+    }
+
+    SECTION("Both explicit") {
+        cli.run("--debug true --verbose=true");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == true);
+    }
+
+    SECTION("Only one explicit") {
+        cli.run("--debug -x 30 --verbose=true");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == true);
+        CHECK(ctx.get<int>({"-x"}) == 30);
+    }
+
+    SECTION("Nested implicit") {
+        cli.run("--debug true --group [--debug=true --verbose -y 20]");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+        CHECK(ctx.get<bool>({"--group", "--debug"})   == true);
+        CHECK(ctx.get<bool>({"--group", "--verbose"}) == true);
+        CHECK(ctx.get<int>({"--group", "-y"}) == 20);
+    }
+
+    SECTION("True/False") {
+        cli.run("--debug=true --verbose=false");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("1/0") {
+        cli.run("--debug=1 --verbose=0");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("Yes/No") {
+        cli.run("--debug=yes --verbose=no");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("On/Off") {
+        cli.run("--debug=on --verbose=off");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("y/n") {
+        cli.run("--debug=y --verbose=n");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("t/f") {
+        cli.run("--debug=t --verbose=f");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("Enable/Disable") {
+        cli.run("--debug=enable --verbose=disable");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+
+    SECTION("Enabled/Disabled") {
+        cli.run("--debug=ENABLED --verbose=DISABLED");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<bool>({"--debug"})   == true);
+        CHECK(ctx.get<bool>({"--verbose"}) == false);
+    }
+}
+
+TEST_CASE("Default conversion table", "[options][custom-conversion]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        Config{
+            RegisterConversion<int>([](std::string_view, int *out) { *out = 1; return true; }),
+            RegisterConversion<float>([](std::string_view, float *out) { *out = 2.0; return true; }),
+            RegisterConversion<double>([](std::string_view, double *out) { *out = 3.0; return true; }),
+            RegisterConversion<Student>([](std::string_view, Student *out) {
+                *out = { .name = "Joshua", .age = 20 }; return true;
+            }),
+        },
+        DefaultCommand{
+            NewOption<int>()["--int"],
+            NewOption<float>()["--float"],
+            NewOption<double>()["--double"],
+            NewOption<Student>()["--student"]
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    cli.run("--int hi --float hello --double world --student :D");
+    CHECK(!cli.hasErrors());
+    CHECK(ctx.get<int>({"--int"}) == 1);
+    CHECK(ctx.get<float>({"--float"}) == Catch::Approx(2.0).epsilon(1e-6));
+    CHECK(ctx.get<double>({"--double"}) == Catch::Approx(3.0).epsilon(1e-6));
+    CHECK(ctx.get<Student>({"--student"}).name == "Joshua");
+    CHECK(ctx.get<Student>({"--student"}).age  == 20);
+}
+
+TEST_CASE("Ascii CharMode", "[options][char]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewOption<char>()["-c"].withCharMode(CharMode::ExpectAscii),
+            NewOption<signed char>()["-sc"].withCharMode(CharMode::ExpectAscii),
+            NewOption<unsigned char>()["-uc"].withCharMode(CharMode::ExpectAscii),
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    SECTION("Test 1") {
+        cli.run("-c a -sc b -uc c");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<char>({"-c"}) == 'a');
+        CHECK(ctx.get<signed char>({"-sc"}) == 'b');
+        CHECK(ctx.get<unsigned char>({"-uc"}) == 'c');
+    }
+
+    SECTION("Test 2") {
+        cli.run("-c 'd' -sc 'e' -uc 'f'");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<char>({"-c"}) == 'd');
+        CHECK(ctx.get<signed char>({"-sc"}) == 'e');
+        CHECK(ctx.get<unsigned char>({"-uc"}) == 'f');
+        cli.getErrors().syntaxErrors.printErrors();
+        cli.getErrors().analysisErrors.printErrors();
+    }
+
+    SECTION("Test 3") {
+        cli.run(R"(-c "g" -sc "h" -uc "i")");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.get<char>({"-c"}) == 'g');
+        CHECK(ctx.get<signed char>({"-sc"}) == 'h');
+        CHECK(ctx.get<unsigned char>({"-uc"}) == 'i');
+    }
+}
+
+TEST_CASE("Ascii CharMode Multioption", "[options][multi][char]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewMultiOption<char>()["--chars"].withCharMode(CharMode::ExpectAscii),
+            NewMultiOption<signed char>()["--signed"].withCharMode(CharMode::ExpectAscii),
+            NewMultiOption<unsigned char>()["--unsigned"].withCharMode(CharMode::ExpectAscii),
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    SECTION("Expect ASCII") {
+        cli.run("--chars a b c --signed d e f --unsigned g h i");
+        CHECK(!cli.hasErrors());
+        CHECK(ctx.getAll<char>({"--chars"}) == std::vector<char>{'a', 'b', 'c'});
+        CHECK(ctx.getAll<signed char>({"--signed"}) == std::vector<signed char>{'d', 'e', 'f'});
+        CHECK(ctx.getAll<unsigned char>({"--unsigned"}) == std::vector<unsigned char>{'g', 'h', 'i'});
+    }
+}

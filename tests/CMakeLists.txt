@@ -8,13 +8,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(Catch2)
 
 set (SOURCE_FILES
-        ${CMAKE_CURRENT_SOURCE_DIR}/ConstraintsTest.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/ErrorTests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/ScannerTest.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/OptionGroupTests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/OptionsTest.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/PositionalTests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/TypeAnalysisTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ConstraintsTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/config-tests/CharModeTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ErrorTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ScannerTest.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/MultiOptionTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/OptionGroupTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/OptionTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/PositionalTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TypeAnalysisTests.cpp
 )
 
 add_executable(ArgonTests ${SOURCE_FILES})
