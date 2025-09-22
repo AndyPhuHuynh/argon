@@ -23,11 +23,10 @@ namespace Argon {
         explicit Cli(Parts&&... parts);
 
         auto validate() -> void;
-
+        auto run(int argc, const char **argv, size_t startIndex = 1) -> void;
         auto run(std::string_view input) -> void;
 
         [[nodiscard]] auto hasErrors() const -> bool;
-
         [[nodiscard]] auto getErrors() const -> const CliErrors&;
     };
 }
@@ -44,8 +43,32 @@ Argon::Cli::Cli(Parts&&... parts) {
 inline auto Argon::Cli::validate() -> void {
     if (m_isValidated) return;
     PathBuilder path;
-    m_rootLayer->validate(path, m_errors.validationErrors);
+    ErrorGroup validationErrors{"Validation Errors", -1, -1};
+    m_rootLayer->validate(path, validationErrors);
+    if (validationErrors.hasErrors()) {
+        std::cerr << "[Argon] Fatal: Invalid cli setup:\n";
+        validationErrors.printErrors();
+        std::terminate();
+    }
     m_isValidated = true;
+}
+
+inline auto Argon::Cli::run(const int argc, const char **argv, const size_t startIndex) -> void {
+    std::string input;
+    for (size_t i = startIndex; i < static_cast<size_t>(argc); i++) {
+        const bool containsWhitespace = detail::containsWhitespace(argv[i]);
+        if (containsWhitespace) input += "\"";
+        const size_t size = std::strlen(argv[i]);
+        for (size_t j = 0; j < size; j++) {
+            if (argv[i][j] == '"' || argv[i][j] == '\\') {
+                input += '\\';
+            }
+            input += argv[i][j];
+        }
+        if (containsWhitespace) input += "\"";
+        input += " ";
+    }
+    run(input);
 }
 
 inline auto Argon::Cli::run(const std::string_view input) -> void {

@@ -5,12 +5,11 @@
 
 namespace Argon {
     struct CliErrors {
-        ErrorGroup validationErrors{"Validation Errors", -1, -1};
         ErrorGroup syntaxErrors{"Syntax Errors", -1, -1};
         ErrorGroup analysisErrors{"Analysis Errors", -1, -1};
 
         auto hasErrors() const -> bool {
-            return validationErrors.hasErrors() || syntaxErrors.hasErrors() || analysisErrors.hasErrors();
+            return syntaxErrors.hasErrors() || analysisErrors.hasErrors();
         }
     };
 }

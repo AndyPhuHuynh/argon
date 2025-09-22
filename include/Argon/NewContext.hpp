@@ -57,6 +57,7 @@ namespace Argon::detail {
         [[nodiscard]] auto getOptionGroup(const FlagPath& flag) const -> NewOptionGroup *;
         [[nodiscard]] auto getPositional(size_t pos) const -> IPositional *;
         [[nodiscard]] auto getPositional(const FlagPath& groupPath, size_t pos) const -> IPositional *;
+        [[nodiscard]] auto getPositional(const FlagPath& flagPath) const -> IPositional *;
         [[nodiscard]] auto getMultiPositional() const -> IMultiPositional *;
         [[nodiscard]] auto getMultiPositional(const FlagPath& groupPath) const -> IMultiPositional *;
 
@@ -161,6 +162,18 @@ inline auto Argon::detail::NewContext::getPositional(const FlagPath& groupPath, 
     }
     const auto& context = group->getContext();
     return pos >= context.getPositionals().size() ? nullptr : context.getPositionals()[pos].get();
+}
+
+inline auto Argon::detail::NewContext::getPositional(const FlagPath& flagPath) const -> IPositional * {
+    const NewOptionGroup *group = resolveGroupPath(flagPath);
+    const auto& positionals = group == nullptr ? m_positionals : group->getContext().m_positionals;
+    const auto it = std::ranges::find_if(positionals, [&flagPath](const auto& positional) -> bool {
+        return positional->getName() == flagPath.flag;
+    });
+    if (it == positionals.end()) {
+        return nullptr;
+    }
+    return it->get();
 }
 
 inline auto Argon::detail::NewContext::getMultiPositional() const -> IMultiPositional * {

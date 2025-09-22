@@ -10,6 +10,8 @@ namespace Argon {
 namespace Argon::detail {
     class ISingleOption;
     class IMultiOption;
+    class IPositional;
+    class IMultiPositional;
 
     template <typename T>
     concept AddableToContext =

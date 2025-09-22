@@ -4,7 +4,6 @@
 #include "Argon/Cli/DefaultCommand.hpp"
 #include "Argon/Cli/ISubcommand.hpp"
 #include "Argon/Options/NewMultiOption.hpp"
-#include "Argon/Parser.hpp"
 
 class Region : public Argon::ISubcommand {
 public:
@@ -104,18 +103,14 @@ int main() {
                 Argon::NewOption<std::string>()["--age"],
                 Argon::NewOption<int>()["--int1"],
                 Argon::NewOption<int>()["--int2"]
-            )["--group"].withConfig(
-                Argon::Bounds<int>(-200, -100)
-            ),
+            )["--group"].withConfig(Argon::Bounds<int>(-200, -100)),
             Argon::NewMultiOption<std::string>()[{"--friends"}],
             Argon::NewPositional<std::string>().withName("greeting"),
             Argon::NewPositional<int>().withName("count").withMin(0),
             Argon::NewMultiPositional<int>().withName("numbers").withMin(0).withMax(100),
             Argon::NewOption<char>()[{"--ascii"}],
             Argon::NewOption<char>()[{"--charNum"}].withCharMode(Argon::CharMode::ExpectInteger).withMin(10)
-        }.withMain(mainCmd).withConfig(
-            Argon::Bounds<int>(1000, 2000)
-        )
+        }.withMain(mainCmd).withConfig(Argon::Bounds<int>(1000, 2000))
     };
     // layer.run("coordinates region --country USA");
     layer.run("-x 10 -y 20 -z 30 --group[--name John --age 20] \"Hello world!\" 10 20 30 40 50 60 70 "
@@ -125,8 +120,7 @@ int main() {
               "-- 80 90 100 ");
 
     if (layer.hasErrors()) {
-        const auto& [validationErrors, syntaxErrors, analysisErrors] = layer.getErrors();
-        validationErrors.printErrors();
+        const auto& [syntaxErrors, analysisErrors] = layer.getErrors();
         syntaxErrors.printErrors();
         analysisErrors.printErrors();
     }
