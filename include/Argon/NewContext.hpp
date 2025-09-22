@@ -106,6 +106,10 @@ template<typename T> requires (
     std::is_base_of_v<Argon::detail::IMultiPositional, std::remove_cvref_t<T>> &&
     std::is_rvalue_reference_v<T&&>)
 auto Argon::detail::NewContext::addOption(T&& option) -> void {
+    if (m_multiPositional != nullptr) {
+        std::cerr << "[Argon] Fatal: Only one MultiPositional can be set per context\n";
+        std::terminate();
+    }
     m_multiPositional = std::make_unique<std::remove_cvref_t<T>>(std::forward<T>(option));
 }
 

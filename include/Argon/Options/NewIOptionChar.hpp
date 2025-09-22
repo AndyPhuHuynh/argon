@@ -14,17 +14,15 @@ namespace Argon::detail {
 
     template <typename Derived>
     class OptionCharImpl : public virtual IOptionChar {
-    protected:
-        CharMode m_charMode = CharMode::UseDefault;
     public:
         auto withCharMode(const CharMode mode) & -> Derived& {
             m_charMode = mode;
-            return *this;
+            return dynamic_cast<Derived&>(*this);
         }
 
         auto withCharMode(const CharMode mode) && -> Derived&& {
             m_charMode = mode;
-            return static_cast<Derived&&>(*this);
+            return dynamic_cast<Derived&&>(*this);
         }
     };
 }

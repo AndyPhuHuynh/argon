@@ -5,6 +5,7 @@
 
 #include "Argon/AddableToContext.hpp"
 #include "Argon/Cli/CliErrors.hpp"
+#include "Argon/Config/AddableToConfig.hpp"
 #include "Argon/Config/Config.hpp"
 #include "Argon/Error.hpp"
 #include "Argon/NewAstBuilder.hpp"
@@ -34,6 +35,9 @@ namespace Argon {
         auto withMain(const MainFn& mainFn) & -> DefaultCommand&;
         auto withMain(const MainFn& mainFn) && -> DefaultCommand&&;
 
+        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) & -> DefaultCommand&;
+        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) && -> DefaultCommand&&;
+
         auto validate(ErrorGroup& validationErrors) const -> void;
         auto resolveConfig(const Config *parentConfig) -> void;
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
@@ -47,6 +51,18 @@ namespace Argon {
 template<Argon::detail::AddableToContext... Options>
 Argon::DefaultCommand::DefaultCommand(Options&&... options) {
     (m_context.addOption(std::forward<Options>(options)), ...);
+}
+
+template<Argon::detail::AddableToConfig ... Configs>
+auto Argon::DefaultCommand::withConfig(Configs... configs) & -> DefaultCommand& {
+    m_context.config = Config(configs...);
+    return *this;
+}
+
+template<Argon::detail::AddableToConfig ... Configs>
+auto Argon::DefaultCommand::withConfig(Configs... configs) && -> DefaultCommand&& {
+    m_context.config = Config(configs...);
+    return std::move(*this);
 }
 
 inline auto Argon::DefaultCommand::withMain(const MainFn& mainFn) & -> DefaultCommand& {
@@ -68,9 +84,9 @@ inline auto Argon::DefaultCommand::resolveConfig(const Config *parentConfig) -> 
 }
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {
-    auto [astContext] = detail::NewAstBuilder(scanner, errors.syntaxErrors).parse(m_context);
-    // ast.checkPositionals(*m_context, errors.syntaxErrors);
-    astContext.analyze(m_context, errors.analysisErrors);
+    const detail::CommandAst ast = detail::NewAstBuilder(scanner, errors.syntaxErrors).parse(m_context);
+    ast.checkPositionals(m_context, errors.syntaxErrors);
+    ast.analyze(m_context, errors.analysisErrors);
     if (m_mainFn) {
         m_mainFn(ContextView{m_context});
     }

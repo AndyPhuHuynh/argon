@@ -238,8 +238,9 @@ public:
         }
         // Should never reach this
         else {
-            throw std::runtime_error("Type does not support stream extraction, "
-                                     "was not an integral type, and no converter was provided.");
+            std::cerr << "[Argon] Fatal: Unable to parse type \"" << detail::getTypeName<T>() << "\". ";
+            std::cerr << "Please provide either a stream extraction operator or a custom conversion function." << std::endl;
+            std::terminate();
         }
         // Set error if not successful
         if (!success) {

@@ -5,12 +5,13 @@
 #include <string>
 
 #include "Argon/AddableToContext.hpp"
+#include "Argon/Config/AddableToConfig.hpp"
+
+namespace Argon::detail {
+    class NewContext;
+}
 
 namespace Argon {
-    namespace detail {
-        class NewContext;
-    }
-
     class NewOptionGroup : public HasFlag<NewOptionGroup> {
         std::string m_groupHeading;
         std::string m_description;
@@ -24,6 +25,9 @@ namespace Argon {
 
         auto withDescription(std::string_view description) & -> NewOptionGroup&;
         auto withDescription(std::string_view description) && -> NewOptionGroup&&;
+
+        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) & -> NewOptionGroup&;
+        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) && -> NewOptionGroup&&;
 
         [[nodiscard]] auto getContext() -> detail::NewContext&;
         [[nodiscard]] auto getContext() const -> const detail::NewContext&;
@@ -56,6 +60,18 @@ inline auto Argon::NewOptionGroup::withDescription(const std::string_view descri
 
 inline auto Argon::NewOptionGroup::withDescription(const std::string_view description) && -> NewOptionGroup&& {
     m_description = description;
+    return std::move(*this);
+}
+
+template<Argon::detail::AddableToConfig ... Configs>
+auto Argon::NewOptionGroup::withConfig(Configs... configs) & -> NewOptionGroup& {
+    m_context->config = Config(configs...);
+    return *this;
+}
+
+template<Argon::detail::AddableToConfig ... Configs>
+auto Argon::NewOptionGroup::withConfig(Configs... configs) && -> NewOptionGroup&& {
+    m_context->config = Config(configs...);
     return std::move(*this);
 }
 

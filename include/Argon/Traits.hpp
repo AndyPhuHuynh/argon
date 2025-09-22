@@ -139,6 +139,15 @@ namespace Argon::detail {
         using T = std::remove_cv_t<T_raw>;
     };
 
+    template <typename T, template <typename...> class Template>
+    struct is_specialization_of : std::false_type {};
+
+    template <template <typename...> class Template, typename... Args>
+    struct is_specialization_of<Template<Args...>, Template> : std::true_type {};
+
+    template <typename T, template <typename...> class Template>
+    inline constexpr bool is_specialization_of_v = is_specialization_of<T, Template>::value;
+
 } // End namespace Argon::detail
 
 #endif // ARGON_TRAITS_INCLUDE

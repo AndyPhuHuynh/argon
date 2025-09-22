@@ -13,7 +13,7 @@ namespace Argon::detail {
     auto getNewOptionConfig(const Config& parserConfig, const IOptionTypeExtensions<ValueType>& opt) -> OptionConfig<ValueType> {
         OptionConfig<ValueType> optionConfig;
         if constexpr (is_numeric_char_type<ValueType>) {
-            optionConfig.charMode = resolveCharMode(parserConfig.getDefaultCharMode(), opt.charMode);
+            optionConfig.charMode = resolveCharMode(parserConfig.getDefaultCharMode(), opt.getCharMode());
         }
         if constexpr (is_non_bool_number<ValueType>) {
             optionConfig.min = opt.getMin().has_value() ? opt.getMin().value() : parserConfig.getMin<ValueType>();

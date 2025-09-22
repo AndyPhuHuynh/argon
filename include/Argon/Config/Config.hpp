@@ -5,6 +5,7 @@
 #include <string_view>
 #include <typeindex>
 
+#include "Argon/Config/AddableToConfig.hpp"
 #include "Argon/Config/Types.hpp"
 #include "Argon/Flag.hpp"
 #include "Argon/Traits.hpp"
@@ -15,24 +16,6 @@ namespace Argon {
         auto resolveConfig(const Config& parentConfig, const Config& childConfig) -> Config;
     }
 
-    struct ConversionFns {
-        ConversionFnMap conversions;
-        template <typename ...Fns> explicit ConversionFns(Fns... fns);
-    };
-
-    template <typename T>
-    struct RegisterConversion   { ConversionFn<T> fn; };
-    struct SetPositionalPolicy  { PositionalPolicy policy; };
-    struct SetCharMode          { CharMode mode; };
-    struct SetFlagPrefixes {
-        std::vector<std::string_view> prefixes;
-        template <typename ...Strings> explicit SetFlagPrefixes(Strings... _prefixes);
-    };
-
-    template <typename T> struct BoundMin   { T min; };
-    template <typename T> struct BoundMax   { T max; };
-    template <typename T> struct Bounds     { T min, max; };
-
     class Config {
         ConversionFnMap m_defaultConversions;
         CharMode m_defaultCharMode = CharMode::UseDefault;
@@ -42,35 +25,22 @@ namespace Argon {
     public:
         friend auto detail::resolveConfig(const Config& parentConfig, const Config& childConfig) -> Config;
         Config() = default;
-
-        template <typename ...Parts> explicit Config(Parts... parts);
+        template <Argon::detail::AddableToConfig ...Parts> explicit Config(Parts... parts);
 
         auto resolveUseDefaults() -> void;
 
         [[nodiscard]] auto getDefaultCharMode() const -> CharMode;
-        auto setDefaultCharMode(CharMode newCharMode) -> Config&;
-
         [[nodiscard]] auto getDefaultPositionalPolicy() const -> PositionalPolicy;
-        auto setDefaultPositionalPolicy(PositionalPolicy newPolicy) -> Config&;
-
         [[nodiscard]] auto getDefaultConversions() const -> const ConversionFnMap&;
-
-        template <typename T>
-        auto registerConversionFn(const std::function<bool(std::string_view, T *)>& conversionFn) -> Config&;
-
-        template <typename T> requires detail::is_non_bool_number<T>
-        [[nodiscard]] auto getMin() const -> T;
-
-        template <typename T> requires detail::is_non_bool_number<T>
-        auto setMin(T min) -> Config&;
-
-        template <typename T> requires detail::is_non_bool_number<T>
-        [[nodiscard]] auto getMax() const -> T;
-
-        template <typename T> requires detail::is_non_bool_number<T>
-        auto setMax(T max) -> Config&;
-
+        template <typename T> requires detail::is_non_bool_number<T> [[nodiscard]] auto getMin() const -> T;
+        template <typename T> requires detail::is_non_bool_number<T> [[nodiscard]] auto getMax() const -> T;
         [[nodiscard]] auto getFlagPrefixes() const -> const std::vector<std::string>&;
+
+        auto setDefaultCharMode(CharMode newCharMode) -> Config&;
+        auto setDefaultPositionalPolicy(PositionalPolicy newPolicy) -> Config&;
+        template <typename T> auto registerConversionFn(const std::function<bool(std::string_view, T *)>& conversionFn) -> Config&;
+        template <typename T> requires detail::is_non_bool_number<T> auto setMin(T min) -> Config&;
+        template <typename T> requires detail::is_non_bool_number<T> auto setMax(T max) -> Config&;
         auto setFlagPrefixes(std::initializer_list<std::string_view> prefixes) -> Config&;
     private:
         auto addPart(ConversionFns conversions) -> void;
@@ -112,17 +82,7 @@ inline auto resolvePositionalPolicy(
 
 //---------------------------------------------------Implementations----------------------------------------------------
 
-template<typename... Fns>
-Argon::ConversionFns::ConversionFns(Fns... fns) {
-    (detail::addConversionFn(conversions, fns), ...);
-}
-
-template<typename ... Strings>
-Argon::SetFlagPrefixes::SetFlagPrefixes(Strings... _prefixes) {
-    (prefixes.emplace_back(_prefixes), ...);
-}
-
-template<typename ... Parts>
+template<Argon::detail::AddableToConfig ... Parts>
 Argon::Config::Config(Parts... parts) {
     (addPart(parts), ...);
 }

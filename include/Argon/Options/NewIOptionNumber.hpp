@@ -30,7 +30,7 @@ namespace Argon::detail {
                 std::cerr << "Argon config error: min must be less than max\n";
             }
             this->m_min = min;
-            return static_cast<Derived&>(*this);
+            return dynamic_cast<Derived&>(*this);
         }
 
         auto withMin(Integral min) && -> Derived&& {
@@ -38,7 +38,7 @@ namespace Argon::detail {
                 std::cerr << "Argon config error: min must be less than max\n";
             }
             this->m_min = min;
-            return static_cast<Derived&&>(*this);
+            return dynamic_cast<Derived&&>(*this);
         }
 
         auto withMax(Integral max) & -> Derived& {
@@ -46,7 +46,7 @@ namespace Argon::detail {
                 std::cerr << "Argon config error: min must be less than max\n";
             }
             this->m_max = max;
-            return static_cast<Derived&>(*this);
+            return dynamic_cast<Derived&>(*this);
         }
 
         auto withMax(Integral max) && -> Derived&& {
@@ -54,7 +54,7 @@ namespace Argon::detail {
                 std::cerr << "Argon config error: min must be less than max\n";
             }
             this->m_max = max;
-            return static_cast<Derived&&>(*this);
+            return dynamic_cast<Derived&&>(*this);
         }
     };
 }
