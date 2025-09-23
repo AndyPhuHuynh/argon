@@ -75,6 +75,7 @@ inline auto Argon::Cli::run(const std::string_view input) -> void {
     m_rootLayer->resolveConfig(nullptr);
     validate();
     m_scanner = Scanner(input);
+    m_errors  = CliErrors();
     m_rootLayer->run(m_scanner, m_errors);
 }
 

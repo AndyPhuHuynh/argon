@@ -62,6 +62,14 @@ inline auto CheckGroup(const Argon::ErrorGroup& group, const std::string_view gr
     return group;
 }
 
+inline auto CheckSyntaxErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Syntax Errors", -1, -1, errorCount);
+}
+
+inline auto CheckAnalysisErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Analysis Errors", -1, -1, errorCount);
+}
+
 inline auto DigitToString(const int i) {
     if (i == 0) return "zero";
     if (i == 1) return "one";

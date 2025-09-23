@@ -18,13 +18,6 @@ namespace Argon {
         ExpectAscii,
         ExpectInteger,
     };
-
-    enum class PositionalPolicy {
-        UseDefault = 0,
-        Interleaved,
-        BeforeFlags,
-        AfterFlags,
-    };
 } // End namespace Argon
 
 namespace Argon::detail {
@@ -67,7 +60,6 @@ namespace Argon {
 
     template <typename T>
     struct RegisterConversion   { ConversionFn<T> fn; };
-    struct SetPositionalPolicy  { PositionalPolicy policy; };
     struct SetCharMode          { CharMode mode; };
     struct SetFlagPrefixes {
         std::vector<std::string_view> prefixes;

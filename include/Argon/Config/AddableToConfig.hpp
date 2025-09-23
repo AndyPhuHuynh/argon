@@ -9,7 +9,6 @@ namespace Argon::detail {
     concept AddableToConfig =
         std::is_rvalue_reference_v<T&&> && (
             std::is_same_v<ConversionFns ,std::remove_cvref_t<T>> ||
-            std::is_same_v<SetPositionalPolicy ,std::remove_cvref_t<T>> ||
             std::is_same_v<SetCharMode ,std::remove_cvref_t<T>> ||
             std::is_same_v<SetFlagPrefixes ,std::remove_cvref_t<T>> ||
             is_specialization_of_v<T, RegisterConversion> ||

@@ -28,9 +28,6 @@ namespace Argon::detail {
         if (const auto charMode = childConfig.getDefaultCharMode(); charMode != CharMode::UseDefault) {
             result.setDefaultCharMode(charMode);
         }
-        if (const auto posPolicy = childConfig.getDefaultPositionalPolicy(); posPolicy != PositionalPolicy::UseDefault) {
-            result.setDefaultPositionalPolicy(posPolicy);
-        }
         for (const auto& [type, func] : childConfig.getDefaultConversions()) {
             result.m_defaultConversions[type] = func;
         }

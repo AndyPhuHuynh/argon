@@ -85,7 +85,6 @@ inline auto Argon::DefaultCommand::resolveConfig(const Config *parentConfig) -> 
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {
     const detail::CommandAst ast = detail::NewAstBuilder(scanner, errors.syntaxErrors).parse(m_context);
-    ast.checkPositionals(m_context, errors.syntaxErrors);
     ast.analyze(m_context, errors.analysisErrors);
     if (m_mainFn) {
         m_mainFn(ContextView{m_context});

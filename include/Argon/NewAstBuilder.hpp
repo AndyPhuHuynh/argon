@@ -361,26 +361,11 @@ inline auto Argon::detail::NewAstBuilder::getNextValidFlag(
             m_scanner.getNextToken();
             return std::monostate{};
         }
-        switch (context.config.getDefaultPositionalPolicy()) {
-            case PositionalPolicy::UseDefault:
-                throw std::runtime_error("Internal Argon error: PositionalPolicy::UseDefault encountered in getNextValidFlag");
-            case PositionalPolicy::BeforeFlags:
-                if (flag.position < dash.position) {
-                    getNextToken();
-                    return std::make_unique<NewPositionalAst>(NewPositionalAst{
-                        .value = AstValue {.value = flag.image, .pos = flag.position },
-                    });
-                }
-                break;
-            case PositionalPolicy::Interleaved:
-            case PositionalPolicy::AfterFlags:
-                if (flag.position > dash.position) {
-                    getNextToken();
-                    return std::make_unique<NewPositionalAst>(NewPositionalAst{
-                        .value = AstValue {.value = flag.image, .pos = flag.position },
-                    });
-                }
-                break;
+        if (flag.position > dash.position) {
+            getNextToken();
+            return std::make_unique<NewPositionalAst>(NewPositionalAst{
+                .value = AstValue {.value = flag.image, .pos = flag.position },
+            });
         }
     }
 

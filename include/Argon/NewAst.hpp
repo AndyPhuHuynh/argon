@@ -1,7 +1,6 @@
 #ifndef ARGON_NEW_AST_HPP
 #define ARGON_NEW_AST_HPP
 
-#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -47,7 +46,6 @@ namespace Argon::detail {
         auto addOption(std::unique_ptr<NewOptionGroupAst> option) -> void;
         auto addOption(std::unique_ptr<NewPositionalAst> option) -> void;
 
-        auto checkPositionals(const NewContext& parentContext, ErrorGroup& syntaxErrors, PathBuilder& path) const -> void;
         auto analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void;
     };
 
@@ -57,14 +55,12 @@ namespace Argon::detail {
         int endPos = -1;
         AstGroupContext context;
 
-        auto checkPositionals(const NewContext& parentContext, ErrorGroup& syntaxErrors, PathBuilder& path) const -> void;
         auto analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void;
     };
 
     struct CommandAst {
         AstGroupContext context;
 
-        auto checkPositionals(const NewContext& parentContext, ErrorGroup& syntaxErrors) const -> void;
         auto analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void;
     };
 }
@@ -137,85 +133,6 @@ inline auto Argon::detail::AstGroupContext::addOption(std::unique_ptr<NewPositio
     positionals.emplace_back(std::move(option));
 }
 
-inline auto Argon::detail::AstGroupContext::checkPositionals( // NOLINT (misc-no-recursion)
-    const NewContext& parentContext, ErrorGroup& syntaxErrors, PathBuilder& path
-) const -> void {
-    std::vector<const AstValue *> flags;
-    for (const auto& opt : options) {
-        flags.emplace_back(&opt->flag);
-    }
-    for (const auto& opt : multiOptions) {
-        flags.emplace_back(&opt->flag);
-    }for (const auto& opt : groups) {
-        flags.emplace_back(&opt->flag);
-    }
-    std::ranges::sort(flags, [](auto flag1, auto flag2) {
-        return flag1->pos < flag2->pos;
-    });
-
-
-    switch (parentContext.config.getDefaultPositionalPolicy()) {
-        case PositionalPolicy::UseDefault:
-            std::cerr << "[Argon] Internal error: checkPositionals called with PositionalPolicy::None";
-            std::terminate();
-        case PositionalPolicy::Interleaved:
-            break;
-        case PositionalPolicy::BeforeFlags: {
-            if (flags.empty() || positionals.empty()) break;
-            size_t flagIndex = 0;
-            for (const auto& positional : positionals) {
-                while (flagIndex < flags.size() && flags[flagIndex]->pos < positional->value.pos) {
-                    flagIndex++;
-                }
-                if (flagIndex > flags.size()) break;
-                if (flagIndex == 0) continue;
-                if (path.empty()) {
-                    syntaxErrors.addErrorMessage(std::format(
-                        R"(Found positional value "{}" after flag "{}". Positional values must occur before all flags at top level.)",
-                        positional->value.value, flags[flagIndex - 1]->value),
-                        positional->value.pos, ErrorType::Syntax_MisplacedPositional);
-                } else {
-                    const std::string pathStr = path.toString(" > ");
-                    syntaxErrors.addErrorMessage(std::format(
-                        R"(Found positional value "{}" after flag "{}" inside group "{}". )"
-                        R"(Positional values must occur before all flags inside group "{}".)",
-                        positional->value.value, flags[flagIndex - 1]->value, pathStr, pathStr),
-                        positional->value.pos, ErrorType::Syntax_MisplacedPositional);
-                }
-            }
-            break;
-        }
-        case PositionalPolicy::AfterFlags: {
-            if (flags.empty() || positionals.empty()) break;
-            size_t flagIndex = 0;
-            for (const auto& positional : positionals) {
-                // Find option directly after each positional
-                while (flagIndex < flags.size() && flags[flagIndex]->pos < positional->value.pos) {
-                    flagIndex++;
-                }
-                if (flagIndex >= flags.size()) break;
-                if (path.empty()) {
-                    syntaxErrors.addErrorMessage(std::format(
-                        R"(Found positional value "{}" before flag "{}". Positional values must occur after all flags at top level.)",
-                        positional->value.value, flags[flagIndex]->value),
-                        positional->value.pos, ErrorType::Syntax_MisplacedPositional);
-                } else {
-                    const std::string pathStr = path.toString(" > ");
-                    syntaxErrors.addErrorMessage(std::format(
-                        R"(Found positional value "{}" before flag "{}" inside group "{}". )"
-                        R"(Positional values must occur after all flags inside group "{}".)",
-                        positional->value.value, flags[flagIndex]->value, pathStr, pathStr),
-                        positional->value.pos, ErrorType::Syntax_MisplacedPositional);
-                }
-            }
-            break;
-        }
-    }
-    for (const auto& group : groups) {
-        group->checkPositionals(parentContext, syntaxErrors, path);
-    }
-}
-
 inline auto Argon::detail::AstGroupContext::analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void { // NOLINT (misc-no-recursion)
     for (const auto& opt : options) {
         opt->analyze(parentContext, analysisErrors);
@@ -231,28 +148,14 @@ inline auto Argon::detail::AstGroupContext::analyze(const NewContext& parentCont
     }
 }
 
-inline auto Argon::detail::NewOptionGroupAst::checkPositionals( // NOLINT (misc-no-recursion)
-    const NewContext& parentContext, ErrorGroup& syntaxErrors, PathBuilder& path
-) const -> void {
-    path.push(flag.value);
-    context.checkPositionals(parentContext, syntaxErrors, path);
-    path.pop();
-}
-
-inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentContext,ErrorGroup& analysisErrors) const -> void { // NOLINT(misc-no-recursion)
+inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void { // NOLINT(misc-no-recursion)
+    analysisErrors.addErrorGroup(flag.value, startPos, endPos);
     const NewOptionGroup *group = parentContext.getOptionGroup({flag.value});
     if (!group) {
         analysisErrors.addErrorMessage(std::format(R"(Unknown option group: "{}")", flag.value), flag.pos, ErrorType::Analysis_UnknownFlag);
         return;
     }
     context.analyze(group->getContext(), analysisErrors);
-}
-
-inline auto Argon::detail::CommandAst::checkPositionals(
-    const NewContext& parentContext, ErrorGroup& syntaxErrors
-) const -> void {
-    PathBuilder path;
-    context.checkPositionals(parentContext, syntaxErrors, path);
 }
 
 inline auto Argon::detail::CommandAst::analyze(

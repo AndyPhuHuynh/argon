@@ -19,7 +19,6 @@ namespace Argon {
     class Config {
         ConversionFnMap m_defaultConversions;
         CharMode m_defaultCharMode = CharMode::UseDefault;
-        PositionalPolicy m_positionalPolicy = PositionalPolicy::UseDefault;
         detail::BoundsMap m_bounds;
         std::vector<std::string> m_flagPrefixes;
     public:
@@ -30,14 +29,12 @@ namespace Argon {
         auto resolveUseDefaults() -> void;
 
         [[nodiscard]] auto getDefaultCharMode() const -> CharMode;
-        [[nodiscard]] auto getDefaultPositionalPolicy() const -> PositionalPolicy;
         [[nodiscard]] auto getDefaultConversions() const -> const ConversionFnMap&;
         template <typename T> requires detail::is_non_bool_number<T> [[nodiscard]] auto getMin() const -> T;
         template <typename T> requires detail::is_non_bool_number<T> [[nodiscard]] auto getMax() const -> T;
         [[nodiscard]] auto getFlagPrefixes() const -> const std::vector<std::string>&;
 
         auto setDefaultCharMode(CharMode newCharMode) -> Config&;
-        auto setDefaultPositionalPolicy(PositionalPolicy newPolicy) -> Config&;
         template <typename T> auto registerConversionFn(const std::function<bool(std::string_view, T *)>& conversionFn) -> Config&;
         template <typename T> requires detail::is_non_bool_number<T> auto setMin(T min) -> Config&;
         template <typename T> requires detail::is_non_bool_number<T> auto setMax(T max) -> Config&;
@@ -46,7 +43,6 @@ namespace Argon {
         auto addPart(ConversionFns conversions) -> void;
         template <typename T>
         auto addPart(RegisterConversion<T> conversion) -> void;
-        auto addPart(SetPositionalPolicy policy) -> void;
         auto addPart(SetCharMode mode) -> void;
         auto addPart(const SetFlagPrefixes& prefixes) -> void;
         template <typename T> auto addPart(BoundMin<T> min) -> void;
@@ -60,23 +56,14 @@ namespace Argon {
 
 namespace Argon::detail {
 
-inline auto resolveCharMode(
-    const CharMode defaultMode, const CharMode otherMode
-) -> CharMode {
-    if (defaultMode == CharMode::UseDefault) {
-        throw std::invalid_argument("Default char mode cannot be UseDefault");
+    inline auto resolveCharMode(
+        const CharMode defaultMode, const CharMode otherMode
+    ) -> CharMode {
+        if (defaultMode == CharMode::UseDefault) {
+            throw std::invalid_argument("Default char mode cannot be UseDefault");
+        }
+        return otherMode == CharMode::UseDefault ? defaultMode : otherMode;
     }
-    return otherMode == CharMode::UseDefault ? defaultMode : otherMode;
-}
-
-inline auto resolvePositionalPolicy(
-    const PositionalPolicy defaultPolicy, const PositionalPolicy contextPolicy
-) -> PositionalPolicy {
-    if (defaultPolicy == PositionalPolicy::UseDefault) {
-        throw std::invalid_argument("Default positional policy cannot be UseDefault");
-    }
-    return contextPolicy == PositionalPolicy::UseDefault ? defaultPolicy : contextPolicy;
-}
 
 } // End namespace Argon::detail
 
@@ -91,9 +78,6 @@ inline auto Argon::Config::resolveUseDefaults() -> void {
     if (m_defaultCharMode == CharMode::UseDefault) {
         m_defaultCharMode = CharMode::ExpectAscii;
     }
-    if (m_positionalPolicy == PositionalPolicy::UseDefault) {
-        m_positionalPolicy = PositionalPolicy::Interleaved;
-    }
     if (m_flagPrefixes.empty()) {
         m_flagPrefixes = {"-", "--"};
     }
@@ -105,15 +89,6 @@ inline auto Argon::Config::getDefaultCharMode() const -> CharMode {
 
 inline auto Argon::Config::setDefaultCharMode(const CharMode newCharMode) -> Config& {
     m_defaultCharMode = newCharMode;
-    return *this;
-}
-
-inline auto Argon::Config::getDefaultPositionalPolicy() const -> PositionalPolicy {
-    return m_positionalPolicy;
-}
-
-inline auto Argon::Config::setDefaultPositionalPolicy(const PositionalPolicy newPolicy) -> Config& {
-    m_positionalPolicy = newPolicy;
     return *this;
 }
 
@@ -147,10 +122,6 @@ inline auto Argon::Config::addPart(ConversionFns conversions) -> void {
     for (auto& [k, v] : conversions.conversions) {
         m_defaultConversions[k] = std::move(v);
     }
-}
-
-inline auto Argon::Config::addPart(const SetPositionalPolicy policy) -> void {
-    m_positionalPolicy = policy.policy;
 }
 
 inline auto Argon::Config::addPart(const SetCharMode mode) -> void {
