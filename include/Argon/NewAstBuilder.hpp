@@ -73,7 +73,7 @@ inline auto Argon::detail::NewAstBuilder::parseCommand() -> CommandAst {
         auto parsed = parseOptionBundle(*m_rootContext, path);
         std::visit([&ast]<typename T>(T& opt) {
             if constexpr (std::is_same_v<T, std::monostate>) {}
-            else {ast.context.addOption(std::move(opt));}
+            else if (opt != nullptr) {ast.context.addOption(std::move(opt));}
         }, parsed);
     }
     return ast;
@@ -218,7 +218,7 @@ inline auto Argon::detail::NewAstBuilder::parseGroupContents(
         auto parsed = parseOptionBundle(nextContext, path);
         std::visit([&groupAst]<typename T>(T& opt) {
             if constexpr (std::is_same_v<T, std::monostate>) {}
-            else { groupAst.context.addOption(std::move(opt)); }
+            else if (opt != nullptr) { groupAst.context.addOption(std::move(opt)); }
         }, parsed);
     }
     end:
@@ -355,13 +355,12 @@ inline auto Argon::detail::NewAstBuilder::getNextValidFlag(
     const NewContext& context, const PathBuilder& path, const bool printErrors
 ) -> std::variant<std::monostate, Token, std::unique_ptr<NewPositionalAst>> {
     Token flag = m_scanner.peekToken();
+    if (flag.kind == TokenKind::DOUBLE_DASH) {
+        m_scanner.getNextToken();
+        return std::monostate{};
+    }
     if (m_doubleDashes.back().has_value()) {
-        const auto& dash = *m_doubleDashes.back();
-        if (flag == dash) {
-            m_scanner.getNextToken();
-            return std::monostate{};
-        }
-        if (flag.position > dash.position) {
+        if (flag.position > m_doubleDashes.back()->position) {
             getNextToken();
             return std::make_unique<NewPositionalAst>(NewPositionalAst{
                 .value = AstValue {.value = flag.image, .pos = flag.position },
@@ -437,7 +436,7 @@ inline auto Argon::detail::NewAstBuilder::getNextValidFlag(
 
 inline auto Argon::detail::NewAstBuilder::skipToNextValidFlag(const NewContext& context, const PathBuilder& path) -> void {
     getNextValidFlag(context, path, false);
-    if (m_scanner.peekToken().kind != TokenKind::END) {
+    if (!m_scanner.peekToken().isOneOf({TokenKind::END, TokenKind::RBRACK})) {
         rewindScanner(1);
     }
 }

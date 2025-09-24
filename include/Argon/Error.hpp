@@ -33,7 +33,6 @@ namespace Argon {
         Syntax_MissingLeftBracket,
         Syntax_MissingRightBracket,
         Syntax_UnknownFlag,
-        Syntax_MisplacedPositional,
         Syntax_MultipleDoubleDash,
 
         Analysis_UnknownFlag,
@@ -353,9 +352,6 @@ inline auto Argon::ErrorGroup::toString() const -> std::string {
                     stream << std::format(R"({}In group "{}":)", prefix, e->getGroupName());
                     stream << "\n";
                     printRecursiveRef(stream, *e, prefix + "    ", printRecursiveRef);
-                    if (i < errors.size() - 1) {
-                        stream << "\n";
-                    }
                 }
             }, error);
         }

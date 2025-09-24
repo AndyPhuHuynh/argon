@@ -367,3 +367,33 @@ TEST_CASE("Ascii CharMode Multioption", "[options][multi][char]") {
         CHECK(ctx.getAll<unsigned char>({"--unsigned"}) == std::vector<unsigned char>{'g', 'h', 'i'});
     }
 }
+
+TEST_CASE("String literals", "[strings]") {
+    ContextView ctx{};
+    auto cli = Cli{
+        DefaultCommand{
+            NewPositional<std::string>(),
+            NewPositional<std::string>(),
+            NewOption<std::string>()["--opt1"],
+            NewOption<std::string>()["--opt2"],
+            NewOptionGroup{
+                NewPositional<std::string>(),
+                NewPositional<std::string>(),
+                NewOption<std::string>()["--opt3"],
+                NewOption<std::string>()["--opt4"],
+            }["--group"]
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    cli.run(R"(--opt1 "Hello world!" "--" "--opt1" --opt2 "String with spaces!" )"
+            R"(--group ["Goodbye world!" "This is a positional" --opt3 "Two words" --opt4 "Hello"])");
+    CHECK(!cli.hasErrors());
+    CHECK(ctx.getPos<std::string, 0>() == "--");
+    CHECK(ctx.getPos<std::string, 1>() == "--opt1");
+    CHECK(ctx.get<std::string>({"--opt1"}) == "Hello world!");
+    CHECK(ctx.get<std::string>({"--opt2"}) == "String with spaces!");
+
+    CHECK(ctx.getPos<std::string, 0>({"--group"}) == "Goodbye world!");
+    CHECK(ctx.getPos<std::string, 1>({"--group"}) == "This is a positional");
+    CHECK(ctx.get<std::string>({"--group", "--opt3"}) == "Two words");
+    CHECK(ctx.get<std::string>({"--group", "--opt4"}) == "Hello");
+}

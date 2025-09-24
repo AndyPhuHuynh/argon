@@ -36,3 +36,62 @@ TEST_CASE("Positional args basic test", "[options][positional]") {
     cli.run("hello world -x 10 positional -f 3.0 --group [10 --string str 20] 300");
     CHECK(!cli.hasErrors());
 }
+
+TEST_CASE("Double-dash test", "[positional][double-dash]") {
+    ContextView ctx;
+    auto cli = Cli{
+        DefaultCommand{
+            NewPositional<std::string>(),
+            NewPositional<std::string>(),
+            NewPositional<std::string>(),
+            NewOption<int>()["--opt1"],
+            NewOption<int>()["--opt2"],
+            NewOption<int>()["--opt3"],
+            NewOptionGroup{
+                NewPositional<std::string>(),
+                NewPositional<std::string>(),
+                NewPositional<std::string>(),
+                NewOption<int>()["--opt4"],
+                NewOption<int>()["--opt5"],
+                NewOption<int>()["--opt6"],
+                NewOptionGroup{
+                    NewPositional<std::string>(),
+                    NewPositional<std::string>(),
+                    NewPositional<std::string>(),
+                    NewOption<int>()["--opt7"],
+                    NewOption<int>()["--opt8"],
+                    NewOption<int>()["--opt9"]
+                }["--nested"]
+            }["--group"]
+        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+    };
+    cli.run("--opt1 10 --opt2 20 --opt3 30 "
+                "--group["
+                    "--opt4 40 --opt5 50 --opt6 60 "
+                    "--nested["
+                        "--opt7 70 --opt8 80 --opt9 90 "
+                        "-- --opt7 --opt8 --opt9"
+                    "]"
+                    "-- --opt4 --opt5 --opt6"
+                "]"
+            "-- --opt1 --opt2 --opt3");
+    CHECK(!cli.hasErrors());
+    CHECK(ctx.get<int>({"--opt1"}) == 10);
+    CHECK(ctx.get<int>({"--opt2"}) == 20);
+    CHECK(ctx.get<int>({"--opt3"}) == 30);
+    CHECK(ctx.getPos<std::string, 0>() == "--opt1");
+    CHECK(ctx.getPos<std::string, 1>() == "--opt2");
+    CHECK(ctx.getPos<std::string, 2>() == "--opt3");
+    CHECK(ctx.get<int>({"--group", "--opt4"}) == 40);
+    CHECK(ctx.get<int>({"--group", "--opt5"}) == 50);
+    CHECK(ctx.get<int>({"--group", "--opt6"}) == 60);
+    CHECK(ctx.getPos<std::string, 0>({"--group"}) == "--opt4");
+    CHECK(ctx.getPos<std::string, 1>({"--group"}) == "--opt5");
+    CHECK(ctx.getPos<std::string, 2>({"--group"}) == "--opt6");
+    CHECK(ctx.get<int>({"--group", "--nested", "--opt7"}) == 70);
+    CHECK(ctx.get<int>({"--group", "--nested", "--opt8"}) == 80);
+    CHECK(ctx.get<int>({"--group", "--nested", "--opt9"}) == 90);
+    CHECK(ctx.getPos<std::string, 0>({"--group", "--nested"}) == "--opt7");
+    CHECK(ctx.getPos<std::string, 1>({"--group", "--nested"}) == "--opt8");
+    CHECK(ctx.getPos<std::string, 2>({"--group", "--nested"}) == "--opt9");
+}

@@ -90,7 +90,7 @@ inline auto Argon::detail::NewMultiOptionAst::analyze(const NewContext& parentCo
 }
 
 inline auto Argon::detail::NewPositionalAst::analyze(
-    const NewContext& parentContext, ErrorGroup& analysisErrors, size_t position
+    const NewContext& parentContext, ErrorGroup& analysisErrors, const size_t position
 ) const -> void {
     if (const auto maxSize = parentContext.getPositionals().size(); position >= maxSize) {
         if (IMultiPositional *opt = parentContext.getMultiPositional(); opt != nullptr) {
@@ -102,7 +102,7 @@ inline auto Argon::detail::NewPositionalAst::analyze(
         analysisErrors.addErrorMessage(
             std::format(R"(Too many positional arguments: "{}" was parsed as positional argument #{}, but a max of )"
                 R"({} positional arguments are allowed.)",
-                value.value, position, maxSize), value.pos, ErrorType::Analysis_UnexpectedToken);
+                value.value, position + 1, maxSize), value.pos, ErrorType::Analysis_UnexpectedToken);
         return;
     }
 

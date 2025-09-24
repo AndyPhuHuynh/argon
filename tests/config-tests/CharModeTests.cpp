@@ -69,7 +69,6 @@ TEST_CASE("CharMode errors", "[config][char-mode][error]") {
     CHECK(cli.hasErrors());
     CHECK(!cli.getErrors().syntaxErrors.hasErrors());
     const auto& analysisErrors = cli.getErrors().analysisErrors;
-    analysisErrors.printErrors();
     CheckAnalysisErrorGroup(analysisErrors, 3);
     CheckMessage(RequireMsg(analysisErrors.getErrors()[0]), {"--int", R"("a")"}, 6, ErrorType::Analysis_ConversionError);
     CheckMessage(RequireMsg(analysisErrors.getErrors()[1]), {"--ascii", "10"}, 16, ErrorType::Analysis_ConversionError);

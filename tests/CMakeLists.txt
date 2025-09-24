@@ -10,7 +10,13 @@ FetchContent_MakeAvailable(Catch2)
 set (SOURCE_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/ConstraintsTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/config-tests/CharModeTests.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/ErrorTests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/CharAnalysis.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/CustomType.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/FlagSyntax.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/IntegerAnalysis.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/OptionGroupSyntax.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/PositionalAnalysis.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/ErrorTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/ScannerTest.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/MultiOptionTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/option-tests/OptionGroupTests.cpp
