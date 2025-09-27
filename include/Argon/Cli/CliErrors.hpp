@@ -7,9 +7,10 @@ namespace Argon {
     struct CliErrors {
         ErrorGroup syntaxErrors{"Syntax Errors", -1, -1};
         ErrorGroup analysisErrors{"Analysis Errors", -1, -1};
+        ErrorGroup constraintErrors{"Constraint Errors", -1, -1};
 
-        auto hasErrors() const -> bool {
-            return syntaxErrors.hasErrors() || analysisErrors.hasErrors();
+        [[nodiscard]] auto hasErrors() const -> bool {
+            return syntaxErrors.hasErrors() || analysisErrors.hasErrors() || constraintErrors.hasErrors();
         }
     };
 }

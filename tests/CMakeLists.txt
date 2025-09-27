@@ -13,6 +13,7 @@ set (SOURCE_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/config-tests/CharModeTests.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/config-tests/ConversionFn.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/config-tests/FlagPrefixes.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/constraint-tests/Requirement.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/CharAnalysis.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/CustomType.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/error-tests/FlagSyntax.cpp

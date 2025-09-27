@@ -17,6 +17,8 @@ namespace Argon {
         std::string m_description;
         std::unique_ptr<detail::NewContext> m_context = std::make_unique<detail::NewContext>();
     public:
+        bool isSet = false;
+
         template <Argon::detail::AddableToContext... Options>
         explicit NewOptionGroup(Options... options);
 

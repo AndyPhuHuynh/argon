@@ -6,7 +6,6 @@
 using namespace Argon;
 
 TEST_CASE("Out of bounds integers", "[integers][config][bounds][errors]") {
-    ContextView ctx{};
     auto cli = Cli{
         DefaultCommand{
             NewOption<char>()["-c"].withCharMode(CharMode::ExpectInteger).withMin(10).withMax(20),
@@ -23,7 +22,7 @@ TEST_CASE("Out of bounds integers", "[integers][config][bounds][errors]") {
             NewOption<float>()["-f"].withMin(120).withMax(130),
             NewOption<double>()["-d"].withMin(130).withMax(140),
             NewOption<long double>()["-ld"].withMin(140).withMax(150),
-        }.withMain([&](const ContextView innerCtx) { ctx = innerCtx; })
+        }
     };
     SECTION("Below min") {
         cli.run("-c   5   -sc   15 -uc 25 "
@@ -78,7 +77,6 @@ TEST_CASE("Out of bounds integers", "[integers][config][bounds][errors]") {
 }
 
 TEST_CASE("Min/max integers within option groups", "[integers][config][bounds][errors]") {
-    ContextView ctx;
     auto cli = Cli{
         Config{
             Bounds<int>(10, 20)
@@ -91,7 +89,7 @@ TEST_CASE("Min/max integers within option groups", "[integers][config][bounds][e
                     NewOption<int>()["--int"]
                 )["--nested"].withConfig(Bounds<int>(30, 40))
             )["--group"].withConfig(Bounds<int>(20, 30))
-        }.withMain([&](const ContextView innerCtx) { ctx = innerCtx; })
+        }
     };
     SECTION("Below min") {
         cli.run("--int 5 --group[--int 15 --nested[--int 25]]");

@@ -29,6 +29,7 @@ namespace Argon::detail {
         }
     protected:
         auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string override {
+            this->m_isSet = true;
             return this->convert(static_cast<const OptionConfig<T>&>(optionConfig), flag, value, m_value);
         }
 
@@ -44,7 +45,6 @@ namespace Argon::detail {
           public virtual IOptionTypeExtensions<T>,
           public Converter<Derived, T> {
         std::vector<T> m_value;
-        bool m_defaultSet = false;
     public:
         SetMultiValueImpl() = default;
 
@@ -54,20 +54,19 @@ namespace Argon::detail {
 
         auto withDefault(std::vector<T> defaultValue) & -> Derived& {
             m_value = std::move(defaultValue);
-            m_defaultSet = true;
             return static_cast<Derived&>(*this);
         }
 
         auto withDefault(std::vector<T> defaultValue) && -> Derived&& {
             m_value = std::move(defaultValue);
-            m_defaultSet = true;
             return static_cast<Derived&&>(*this);
         }
     protected:
         auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string override {
-            if (m_defaultSet) {
+            // Remove default values
+            if (!this->m_isSet) {
                 m_value.clear();
-                m_defaultSet = false;
+                this->m_isSet = true;
             }
             return this->convert(static_cast<const OptionConfig<T>&>(optionConfig), flag, value, m_value.emplace_back());
         }

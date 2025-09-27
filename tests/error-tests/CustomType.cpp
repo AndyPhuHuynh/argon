@@ -2,7 +2,6 @@
 
 #include "Argon/Cli/Cli.hpp"
 #include "../ErrorTestFunctions.hpp"
-#include "catch2/internal/catch_random_seed_generation.hpp"
 
 using namespace Argon;
 

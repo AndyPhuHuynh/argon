@@ -19,18 +19,13 @@ namespace Argon {
         std::vector<std::string> aliases;
 
         Flag() = default;
-
         explicit Flag(std::string_view flag);
 
-        [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
-
-        [[nodiscard]] auto getString() const -> std::string;
-
-        [[nodiscard]] auto isEmpty() const -> bool;
-
-        auto applyPrefixes(std::string_view shortPrefix, std::string_view longPrefix);
-
         auto operator<=>(const Flag&) const = default;
+        [[nodiscard]] auto containsFlag(std::string_view flag) const -> bool;
+        [[nodiscard]] auto getString() const -> std::string;
+        [[nodiscard]] auto isEmpty() const -> bool;
+        auto applyPrefixes(std::string_view shortPrefix, std::string_view longPrefix);
     };
 
     struct FlagPathWithAlias {
@@ -38,16 +33,14 @@ namespace Argon {
         Flag flag;
 
         FlagPathWithAlias() = default;
-
         explicit FlagPathWithAlias(const FlagPath& flagPath);
-
         FlagPathWithAlias(std::initializer_list<Flag> flags);
-
         FlagPathWithAlias(std::vector<Flag> path, Flag flag);
 
-        [[nodiscard]] auto getString() const -> std::string;
-
         auto operator<=>(const FlagPathWithAlias&) const = default;
+        [[nodiscard]] auto isEmpty() const -> bool;
+        [[nodiscard]] auto getMainFlagPath() const -> FlagPath;
+        [[nodiscard]] auto getString() const -> std::string;
     };
 
     struct FlagPath {
@@ -55,15 +48,12 @@ namespace Argon {
         std::string flag;
 
         FlagPath() = default;
-
         explicit FlagPath(std::string_view flag);
-
         FlagPath(std::initializer_list<std::string_view> flags);
 
         auto operator<=>(const FlagPath&) const = default;
 
         [[nodiscard]] auto toString() const -> std::string;
-
         auto extendPath(std::string_view newFlag) -> void;
     };
 
@@ -269,6 +259,19 @@ inline FlagPathWithAlias::FlagPathWithAlias(const std::initializer_list<Flag> fl
 
     groupPath.insert(groupPath.end(), begin, end);
     flag = Flag(*end);
+}
+
+inline auto FlagPathWithAlias::isEmpty() const -> bool {
+    return groupPath.empty() && flag.isEmpty();
+}
+
+inline auto FlagPathWithAlias::getMainFlagPath() const -> FlagPath {
+    FlagPath path;
+    for (const auto& groupFlag: groupPath) {
+        path.extendPath(groupFlag.mainFlag);
+    }
+    path.extendPath(flag.mainFlag);
+    return path;
 }
 
 inline auto FlagPathWithAlias::getString() const -> std::string {

@@ -123,12 +123,15 @@ auto parseFloatingPoint(const OptionConfig<T>& config, const std::string_view ar
 }
 
 class ISetValue {
+protected:
+    bool m_isSet = false;
 public:
     ISetValue() = default;
     virtual ~ISetValue() = default;
 
     virtual auto setValue(const Config& parserConfig, std::string_view flag, std::string_view value) -> std::string = 0;
     virtual auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string = 0;
+    [[nodiscard]] auto isSet() const -> bool { return m_isSet; }
 };
 
 template <typename T>
@@ -267,36 +270,6 @@ public:
     auto withErrorMsgFn(const GenerateErrorMsgFn& generate_error_msg_fn) && -> Derived&& {
         m_generate_error_msg_fn = generate_error_msg_fn;
         return static_cast<Derived&&>(*this);
-    }
-};
-
-template <typename Derived, typename T>
-class SetSingleValueImpl : public ISetValue, public Converter<Derived, T> {
-    T m_value = T();
-    T *m_out = nullptr;
-public:
-    SetSingleValueImpl() = default;
-
-    explicit SetSingleValueImpl(T defaultValue) : m_value(defaultValue) {}
-
-    explicit SetSingleValueImpl(T *out) : m_out(out) {}
-
-    SetSingleValueImpl(T defaultValue, T *out) : m_value(defaultValue), m_out(out) {
-        if (m_out != nullptr) *m_out = m_value;
-    }
-
-    [[nodiscard]] auto getValue() const -> const T& {
-        return m_value;
-    }
-protected:
-    auto setValue(const IOptionConfig& optionConfig, std::string_view flag, std::string_view value) -> std::string override {
-        T temp;
-        std::string errorMsg = this->convert(static_cast<const OptionConfig<T>&>(optionConfig), flag, value, temp);
-        m_value = temp;
-        if (m_out != nullptr) {
-            *m_out = temp;
-        }
-        return errorMsg;
     }
 };
 

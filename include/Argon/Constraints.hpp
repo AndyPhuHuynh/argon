@@ -2,12 +2,14 @@
 #define ARGON_ATTRIBUTES_INCLUDE
 
 #include <format>
+#include <functional>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-#include "Flag.hpp"
+#include "Argon/Error.hpp"
+#include "Argon/Flag.hpp"
 
 namespace Argon {
 

@@ -41,6 +41,8 @@ namespace Argon::detail {
         std::vector<std::unique_ptr<NewOptionGroupAst>> groups;
         std::vector<std::unique_ptr<NewPositionalAst>> positionals;
 
+        [[nodiscard]] auto isEmpty() const -> bool;
+
         auto addOption(std::unique_ptr<SingleOptionAst> option) -> void;
         auto addOption(std::unique_ptr<NewMultiOptionAst> option) -> void;
         auto addOption(std::unique_ptr<NewOptionGroupAst> option) -> void;
@@ -117,6 +119,10 @@ inline auto Argon::detail::NewPositionalAst::analyze(
     }
 }
 
+inline auto Argon::detail::AstGroupContext::isEmpty() const -> bool {
+    return options.empty() && multiOptions.empty() &&  groups.empty() && positionals.empty();
+}
+
 inline auto Argon::detail::AstGroupContext::addOption(std::unique_ptr<SingleOptionAst> option) -> void {
     options.emplace_back(std::move(option));
 }
@@ -150,11 +156,15 @@ inline auto Argon::detail::AstGroupContext::analyze(const NewContext& parentCont
 
 inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentContext, ErrorGroup& analysisErrors) const -> void { // NOLINT(misc-no-recursion)
     analysisErrors.addErrorGroup(flag.value, startPos, endPos);
-    const NewOptionGroup *group = parentContext.getOptionGroup({flag.value});
+    NewOptionGroup *group = parentContext.getOptionGroup({flag.value});
     if (!group) {
         analysisErrors.addErrorMessage(std::format(R"(Unknown option group: "{}")", flag.value), flag.pos, ErrorType::Analysis_UnknownFlag);
         return;
     }
+    if (context.isEmpty()) {
+        analysisErrors.addErrorMessage(std::format(R"(Group provided without any nested options: {})", flag.value), flag.pos, ErrorType::Analysis_EmptyGroup);
+    }
+    group->isSet = true;
     context.analyze(group->getContext(), analysisErrors);
 }
 

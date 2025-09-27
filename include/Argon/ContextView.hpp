@@ -34,6 +34,8 @@ namespace Argon {
     };
 }
 
+// --------------------------------------------- Implementations -------------------------------------------------------
+
 template<typename ValueType>
 auto Argon::ContextView::get(const FlagPath& flagPath) const -> const ValueType& {
     detail::ISingleOption *opt = m_context->getSingleOption(flagPath);

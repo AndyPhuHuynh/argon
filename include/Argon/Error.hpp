@@ -39,6 +39,7 @@ namespace Argon {
         Analysis_IncorrectOptionType,
         Analysis_ConversionError,
         Analysis_UnexpectedToken,
+        Analysis_EmptyGroup,
 
         Constraint_MultiOptionCount,
         Constraint_RequiredFlag,
