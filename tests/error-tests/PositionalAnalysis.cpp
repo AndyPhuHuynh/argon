@@ -22,7 +22,7 @@ TEST_CASE("Positional", "[positional][analysis][errors]") {
     };
 
     SECTION("Test 1") {
-        cli.run("100 200 --name John --group []");
+        cli.run("100 200 --name John");
         CHECK(!cli.hasErrors());
         CHECK(ctx.getPos<int>({"input"}) == 100);
         CHECK(ctx.getPos<int>({"output"}) == 200);

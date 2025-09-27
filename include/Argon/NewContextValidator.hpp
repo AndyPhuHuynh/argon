@@ -116,7 +116,6 @@ inline auto Argon::detail::ContextValidator::checkDuplicateFlags(ErrorGroup& val
     countFlags(m_context.getMultiOptions());
     countFlags(m_context.getOptionGroups());
 
-
     for (const auto& [flag, count] : seenFlags) {
         if (count >= 2) {
             if (path.empty()) {

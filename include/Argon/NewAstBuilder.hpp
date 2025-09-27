@@ -31,7 +31,7 @@ namespace Argon::detail {
                 std::unique_ptr<NewOptionGroupAst>, std::unique_ptr<NewPositionalAst>>;
         auto parseSingleOption(const NewContext& context, const PathBuilder& path, const Token& flag) -> std::unique_ptr<SingleOptionAst>;
         auto parseMultiOption(const NewContext& context, const PathBuilder& path, const Token& flag) -> std::unique_ptr<NewMultiOptionAst>;
-        auto parseGroupContents(const NewContext& nextContext, PathBuilder& path, NewOptionGroupAst& groupAst) -> void;
+        auto parseGroupContents(const NewContext& nextContext, PathBuilder& path, NewOptionGroupAst& groupAst) -> bool;
         auto parseOptionGroup(const NewContext& context, PathBuilder& path, const Token& flag) -> std::unique_ptr<NewOptionGroupAst>;
 
         auto pushDoubleDashInScope(const PathBuilder& path) -> void;
@@ -196,7 +196,12 @@ inline auto Argon::detail::NewAstBuilder::parseGroupContents(
     const NewContext& nextContext,
     PathBuilder& path,
     NewOptionGroupAst& groupAst
-) -> void {
+) -> bool {
+    if (const Token nextToken = m_scanner.peekToken(); nextToken.kind == TokenKind::RBRACK) {
+        getNextToken();
+        groupAst.endPos = nextToken.position;
+        return false;
+    }
     pushDoubleDashInScope(path);
     while (true) {
         const Token nextToken = m_scanner.peekToken();
@@ -221,8 +226,9 @@ inline auto Argon::detail::NewAstBuilder::parseGroupContents(
             else if (opt != nullptr) { groupAst.context.addOption(std::move(opt)); }
         }, parsed);
     }
-    end:
-        m_doubleDashes.pop_back();
+end:
+    m_doubleDashes.pop_back();
+    return true;
 }
 
 inline auto Argon::detail::NewAstBuilder::parseOptionGroup(
@@ -244,8 +250,22 @@ inline auto Argon::detail::NewAstBuilder::parseOptionGroup(
     optionGroupAst->flag = AstValue { .value = flag.image, .pos = flag.position };
     optionGroupAst->startPos = flag.position;
     path.push(flag.image);
-    parseGroupContents(nextContext, path, *optionGroupAst);
+    const bool emptyGroupFound = !parseGroupContents(nextContext, path, *optionGroupAst);
     path.pop();
+
+    if (emptyGroupFound && optionGroupAst->context.isEmpty()) {
+        if (&context == m_rootContext) {
+            m_syntaxErrors.addErrorMessage(
+                std::format(R"(Group was provided without any options: {})", flag.image),
+                flag.position, ErrorType::Analysis_EmptyGroup);
+        } else {
+            m_syntaxErrors.addErrorMessage(
+                std::format(R"(Group within group "{}" was provided without any options: {})", path.toString(" > "), flag.image),
+                flag.position, ErrorType::Analysis_EmptyGroup);
+        }
+        return nullptr;
+    }
+
     return optionGroupAst;
 }
 

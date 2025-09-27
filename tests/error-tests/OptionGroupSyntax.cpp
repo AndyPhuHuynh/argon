@@ -246,6 +246,38 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
             46, ErrorType::Syntax_UnknownFlag);
     }
-
     CHECK(!cli.getErrors().analysisErrors.hasErrors());
+}
+
+TEST_CASE("Empty group", "[option-group][empty-group]") {
+    auto cli = Cli{
+        DefaultCommand{
+            NewOptionGroup{
+                NewOption<int>()["--sibling"],
+                NewOptionGroup{
+                    NewOption<int>()["--int"]
+                }["--nested"]
+            }["--top1"],
+            NewOptionGroup{
+                NewOption<int>()["--sibling"],
+                NewOptionGroup{
+                    NewOption<int>()["--int"]
+                }["--nested"]
+            }["--top2"],
+        }
+    };
+    SECTION("Test 1") {
+        cli.run("--top1[] --top2[]");
+        CHECK(cli.hasErrors());
+        const auto& errors = cli.getErrors().syntaxErrors;
+        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1"}, ErrorType::Analysis_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top2"}, ErrorType::Analysis_EmptyGroup);
+    }
+    SECTION("Test 2") {
+        cli.run("--top1[--nested[]] --top2[--nested[]]");
+        CHECK(cli.hasErrors());
+        const auto& errors = cli.getErrors().syntaxErrors;
+        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1", "--nested"}, ErrorType::Analysis_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top2", "--nested"}, ErrorType::Analysis_EmptyGroup);
+    }
 }

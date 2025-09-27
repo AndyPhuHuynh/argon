@@ -20,9 +20,6 @@ namespace Argon {
 
     using MainFn = std::function<void(ContextView)>;
 
-    template <typename T>
-    concept DefaultCommandCtorArgs = detail::AddableToContext<T> || std::is_same_v<T, FlagConstraints>;
-
     class DefaultCommand {
         detail::NewContext m_context{};
         FlagConstraints m_constraints;
@@ -34,14 +31,17 @@ namespace Argon {
         DefaultCommand(DefaultCommand&&) = default;
         DefaultCommand& operator=(DefaultCommand&&) = default;
 
-        template<Argon::DefaultCommandCtorArgs... Args>
+        template<Argon::detail::AddableToContext... Args>
         explicit DefaultCommand(Args&&... args);
 
         auto withMain(const MainFn& mainFn) & -> DefaultCommand&;
         auto withMain(const MainFn& mainFn) && -> DefaultCommand&&;
 
-        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) & -> DefaultCommand&;
-        template <Argon::detail::AddableToConfig ...Configs> auto withConfig(Configs... configs) && -> DefaultCommand&&;
+        template <Argon::detail::AddableToConfig... Configs> auto withConfig(Configs... configs) & -> DefaultCommand&;
+        template <Argon::detail::AddableToConfig... Configs> auto withConfig(Configs... configs) && -> DefaultCommand&&;
+
+        template <Argon::detail::IsConstraint... Constraints> auto withConstraints(Constraints... constraints) & -> DefaultCommand&;
+        template <Argon::detail::IsConstraint... Constraints> auto withConstraints(Constraints... constraints) && -> DefaultCommand&&;
 
         auto validate(ErrorGroup& validationErrors) const -> void;
         auto resolveConfig(const Config *parentConfig) -> void;
@@ -49,7 +49,6 @@ namespace Argon {
     private:
         template <Argon::detail::AddableToContext T>
         auto addPart(T&& part) -> void;
-        auto addPart(FlagConstraints constraints) -> void;
     };
 }
 
@@ -58,7 +57,7 @@ namespace Argon {
 #include "Argon/ContextView.hpp"
 #include "Argon/Constraints/ConstraintValidator.hpp"
 
-template<Argon::DefaultCommandCtorArgs... Args>
+template<Argon::detail::AddableToContext... Args>
 Argon::DefaultCommand::DefaultCommand(Args&&... args) {
     (addPart(std::forward<Args>(args)), ...);
 }
@@ -72,6 +71,18 @@ auto Argon::DefaultCommand::withConfig(Configs... configs) & -> DefaultCommand& 
 template<Argon::detail::AddableToConfig ... Configs>
 auto Argon::DefaultCommand::withConfig(Configs... configs) && -> DefaultCommand&& {
     m_context.config = Config(configs...);
+    return std::move(*this);
+}
+
+template<Argon::detail::IsConstraint ... Constraints>
+auto Argon::DefaultCommand::withConstraints(Constraints... constraints) & -> DefaultCommand& {
+    m_constraints = FlagConstraints(std::move(constraints)...);
+    return *this;
+}
+
+template<Argon::detail::IsConstraint ... Constraints>
+auto Argon::DefaultCommand::withConstraints(Constraints... constraints) && -> DefaultCommand&& {
+    m_constraints = FlagConstraints(std::move(constraints)...);
     return std::move(*this);
 }
 
@@ -95,6 +106,7 @@ inline auto Argon::DefaultCommand::resolveConfig(const Config *parentConfig) -> 
 
 inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) const -> void {
     const detail::CommandAst ast = detail::NewAstBuilder(scanner, errors.syntaxErrors).parse(m_context);
+    if (errors.syntaxErrors.hasErrors()) return;
     ast.analyze(m_context, errors.analysisErrors);
     if (m_mainFn) {
         m_mainFn(ContextView{m_context});
@@ -105,10 +117,6 @@ inline auto Argon::DefaultCommand::run(Scanner& scanner, CliErrors& errors) cons
 template<Argon::detail::AddableToContext T>
 auto Argon::DefaultCommand::addPart(T&& part) -> void {
     m_context.addOption(std::forward<T>(part));
-}
-
-inline auto Argon::DefaultCommand::addPart(FlagConstraints constraints) -> void {
-    m_constraints = std::move(constraints);
 }
 
 #endif // ARGON_DEFAULT_COMMAND_HPP

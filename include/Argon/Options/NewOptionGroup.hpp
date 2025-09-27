@@ -20,7 +20,7 @@ namespace Argon {
         bool isSet = false;
 
         template <Argon::detail::AddableToContext... Options>
-        explicit NewOptionGroup(Options... options);
+        explicit NewOptionGroup(Options&&... options);
 
         auto withHeader(std::string_view header) & -> NewOptionGroup&;
         auto withHeader(std::string_view header) && -> NewOptionGroup&&;
@@ -41,9 +41,10 @@ namespace Argon {
 #include "Argon/NewContext.hpp" // NOLINT (misc-unused-include)
 
 template<Argon::detail::AddableToContext ... Options>
-Argon::NewOptionGroup::NewOptionGroup(Options... options) {
-    (m_context->addOption(std::move(options)), ...);
+Argon::NewOptionGroup::NewOptionGroup(Options&&... options) {
+    (m_context->addOption(std::forward<Options>(options)), ...);
 }
+
 
 inline auto Argon::NewOptionGroup::withHeader(const std::string_view header) & -> NewOptionGroup& {
     m_groupHeading = header;

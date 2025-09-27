@@ -8,19 +8,23 @@
 #include "Argon/Constraints/Exclusion.hpp"
 #include "Argon/Constraints/Requirement.hpp"
 
-namespace Argon {
+namespace Argon::detail {
     template <typename T>
     concept IsConstraint =
         std::is_same_v<T, Dependency> ||
         std::is_same_v<T, Exclusion> ||
         std::is_same_v<T, Requirement>;
+}
+
+
+namespace Argon {
 
     struct FlagConstraints {
         std::vector<Requirement> requirements;
         std::vector<Dependency> dependencies;
         std::vector<Exclusion> exclusions;
 
-        template <Argon::IsConstraint... Constraints>
+        template <Argon::detail::IsConstraint... Constraints>
         explicit FlagConstraints(Constraints... constraints);
 
         auto addConstraint(Requirement requirement);
@@ -31,7 +35,7 @@ namespace Argon {
 
 // --------------------------------------------- Implementations -------------------------------------------------------
 
-template <Argon::IsConstraint ...Constraints>
+template <Argon::detail::IsConstraint ...Constraints>
 Argon::FlagConstraints::FlagConstraints(Constraints... constraints) {
     (addConstraint(constraints), ...);
 }

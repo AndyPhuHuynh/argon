@@ -10,17 +10,6 @@ TEST_CASE("Requirement test", "[constraints][requirements]") {
     ContextView ctx;
     auto cli = Cli{
         DefaultCommand{
-            FlagConstraints{
-                Requirement({"--int"}),
-                Requirement({"--float"}),
-                Requirement({"--string"}),
-                Requirement({"--group", "--char"}),
-                Requirement({"--group", "--short"}),
-                Requirement({"--group", "--long"}),
-                Requirement({"--group", "--nested", "--bool"}),
-                Requirement({"--group", "--nested", "--uint"}),
-                Requirement({"--group", "--nested", "--ushort"}),
-            },
             NewOption<int>()["--int"],
             NewOption<float>()["--float"],
             NewOption<std::string>()["--string"],
@@ -34,7 +23,17 @@ TEST_CASE("Requirement test", "[constraints][requirements]") {
                     NewOption<unsigned short>()["--ushort"]
                 )["--nested"]
             }["--group"]
-        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+        }.withConstraints(
+            Requirement({"--int"}),
+            Requirement({"--float"}),
+            Requirement({"--string"}),
+            Requirement({"--group", "--char"}),
+            Requirement({"--group", "--short"}),
+            Requirement({"--group", "--long"}),
+            Requirement({"--group", "--nested", "--bool"}),
+            Requirement({"--group", "--nested", "--uint"}),
+            Requirement({"--group", "--nested", "--ushort"})
+        ).withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
     };
     SECTION("Nothing provided") {
         cli.run("");
@@ -72,17 +71,16 @@ TEST_CASE("Requirement on group", "[constraints][requirements]") {
     ContextView ctx;
     auto cli = Cli{
         DefaultCommand{
-            FlagConstraints{
-                Requirement({"--group"}),
-                Requirement({"--group", "--nested"}),
-            },
             NewOptionGroup{
                 NewOption<int>()["--int"],
                 NewOptionGroup(
                     NewOption<int>()["--int"]
                 )["--nested"]
             }["--group"]
-        }.withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
+        }.withConstraints(
+            Requirement({"--group"}),
+            Requirement({"--group", "--nested"})
+        ).withMain([&ctx](const ContextView innerCtx) { ctx = innerCtx; })
     };
     SECTION("Nothing provided") {
         cli.run("");

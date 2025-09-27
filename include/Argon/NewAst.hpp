@@ -161,9 +161,6 @@ inline auto Argon::detail::NewOptionGroupAst::analyze(const NewContext& parentCo
         analysisErrors.addErrorMessage(std::format(R"(Unknown option group: "{}")", flag.value), flag.pos, ErrorType::Analysis_UnknownFlag);
         return;
     }
-    if (context.isEmpty()) {
-        analysisErrors.addErrorMessage(std::format(R"(Group provided without any nested options: {})", flag.value), flag.pos, ErrorType::Analysis_EmptyGroup);
-    }
     group->isSet = true;
     context.analyze(group->getContext(), analysisErrors);
 }
