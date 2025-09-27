@@ -5,7 +5,7 @@
 #include "Argon/Flag.hpp"
 
 namespace Argon {
-    class Requirement : IConstraintErrorMsg<Requirement> {
+    class Requirement : public IConstraintErrorMsg<Requirement> {
     public:
         FlagPath flagPath;
 

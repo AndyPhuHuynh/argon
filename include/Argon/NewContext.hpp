@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <ranges>
 #include <vector>
 
 #include "Argon/Config/Config.hpp"
@@ -116,6 +115,7 @@ auto Argon::detail::NewContext::addOption(T&& option) -> void {
 
 inline auto Argon::detail::NewContext::getSingleOption(const FlagPath& flag) const -> ISingleOption * {
     const NewOptionGroup *group = resolveGroupPath(flag);
+    if (group == nullptr && !flag.groupPath.empty()) return nullptr;
     const auto& options = group == nullptr ? m_options : group->getContext().m_options;
     const auto it = std::ranges::find_if(options, [&flag](const auto& option) -> bool {
         return option->getFlag().containsFlag(flag.flag);
@@ -128,6 +128,7 @@ inline auto Argon::detail::NewContext::getSingleOption(const FlagPath& flag) con
 
 inline auto Argon::detail::NewContext::getMultiOption(const FlagPath& flag) const -> IMultiOption * {
     const NewOptionGroup *group = resolveGroupPath(flag);
+    if (group == nullptr && !flag.groupPath.empty()) return nullptr;
     const auto& options = group == nullptr ? m_multiOptions : group->getContext().m_multiOptions;
     const auto it = std::ranges::find_if(options, [&flag](const auto& option) -> bool {
         return option->getFlag().containsFlag(flag.flag);
@@ -140,6 +141,7 @@ inline auto Argon::detail::NewContext::getMultiOption(const FlagPath& flag) cons
 
 inline auto Argon::detail::NewContext::getOptionGroup(const FlagPath& flag) const -> NewOptionGroup * {
     const NewOptionGroup *resolvedGroup = resolveGroupPath(flag);
+    if (resolvedGroup == nullptr && !flag.groupPath.empty()) return nullptr;
     const auto& groups = resolvedGroup == nullptr ? m_groups : resolvedGroup->getContext().m_groups;
     const auto it = std::ranges::find_if(groups, [&flag](const auto& group) -> bool {
         return group->getFlag().containsFlag(flag.flag);
@@ -166,6 +168,7 @@ inline auto Argon::detail::NewContext::getPositional(const FlagPath& groupPath, 
 
 inline auto Argon::detail::NewContext::getPositional(const FlagPath& flagPath) const -> IPositional * {
     const NewOptionGroup *group = resolveGroupPath(flagPath);
+    if (group == nullptr && !flagPath.groupPath.empty()) return nullptr;
     const auto& positionals = group == nullptr ? m_positionals : group->getContext().m_positionals;
     const auto it = std::ranges::find_if(positionals, [&flagPath](const auto& positional) -> bool {
         return positional->getName() == flagPath.flag;

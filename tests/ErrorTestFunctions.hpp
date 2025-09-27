@@ -80,6 +80,10 @@ inline auto CheckAnalysisErrorGroup(const Argon::ErrorGroup& group, const size_t
     CheckGroup(group, "Analysis Errors", -1, -1, errorCount);
 }
 
+inline auto CheckConstraintErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Constraint Errors", -1, -1, errorCount);
+}
+
 inline auto DigitToString(const int i) {
     if (i == 0) return "zero";
     if (i == 1) return "one";

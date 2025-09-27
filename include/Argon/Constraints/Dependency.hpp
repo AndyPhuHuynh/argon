@@ -1,11 +1,11 @@
 #ifndef ARGON_CONSTRAINT_DEPENDENCY_HPP
 #define ARGON_CONSTRAINT_DEPENDENCY_HPP
 
-#include "ConstraintErrorMsg.hpp"
+#include "Argon/Constraints/ConstraintErrorMsg.hpp"
 #include "Argon/Flag.hpp"
 
 namespace Argon {
-    class Dependency : IConstraintErrorMsg<Dependency> {
+    class Dependency : public IConstraintErrorMsg<Dependency> {
     public:
         FlagPath dependent;
         FlagPath prerequisite;
