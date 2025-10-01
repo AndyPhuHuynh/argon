@@ -8,7 +8,7 @@ using namespace Argon;
 using namespace Catch::Matchers;
 
 TEST_CASE("Option group syntax errors", "[option-group][syntax][errors]") {
-    ContextView ctx;
+    ContextView ctx{};
     auto cli = Cli{
         DefaultCommand{
             NewOption<std::string>()["--name"],
@@ -150,12 +150,14 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         cli.run("--name --group [--age [--major Music]]");
         CHECK(cli.hasErrors());
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
-        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 2);
+        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 3);
 
-        const auto& noValueForName   = RequireMsg(syntaxErrors.getErrors()[0]);
-        const auto& noValueForAge    = RequireMsg(syntaxErrors.getErrors()[1]);
+        const auto& noValueForName  = RequireMsg(syntaxErrors.getErrors()[0]);
+        const auto& emptyGroup      = RequireMsg(syntaxErrors.getErrors()[1]);
+        const auto& noValueForAge   = RequireMsg(syntaxErrors.getErrors()[2]);
 
         CheckMessage(noValueForName, 7,  ErrorType::Syntax_MissingValue);
+        CheckMessage(emptyGroup,     7,  ErrorType::Syntax_EmptyGroup);
         CheckMessage(noValueForAge,  22, ErrorType::Syntax_MissingValue);
     }
 
@@ -163,12 +165,11 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         cli.run("--huh John --group [--huh 20]");
         CHECK(cli.hasErrors());
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
-        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 2);
+        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 3);
 
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
-            0,  ErrorType::Syntax_UnknownFlag);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]),
-            20, ErrorType::Syntax_UnknownFlag);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]), 0,  ErrorType::Syntax_UnknownFlag);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]), 11, ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[2]), 20, ErrorType::Syntax_UnknownFlag);
     }
 
     SECTION("Missing left bracket") {
@@ -177,10 +178,8 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
         CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 2);
 
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
-            40, ErrorType::Syntax_MissingLeftBracket);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]),
-            54, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]), 40, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]), 54, ErrorType::Syntax_MissingLeftBracket);
     }
 
     SECTION("Missing right bracket") {
@@ -189,26 +188,21 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
         CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 2);
 
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
-            54, ErrorType::Syntax_MissingRightBracket);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]),
-            54, ErrorType::Syntax_MissingRightBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]), 54, ErrorType::Syntax_MissingRightBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]), 54, ErrorType::Syntax_MissingRightBracket);
     }
 
     SECTION("Same level groups missing lbrack") {
         cli.run("--name John --group [--classes --major Music] --classes2 --major CS]]");
         CHECK(cli.hasErrors());
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
-        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 4);
+        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 5);
 
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
-            31, ErrorType::Syntax_MissingLeftBracket);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]),
-            46, ErrorType::Syntax_UnknownFlag);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[2]),
-            67, ErrorType::Syntax_MissingLeftBracket);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[3]),
-            68, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]), 12, ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]), 31, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[2]), 46, ErrorType::Syntax_UnknownFlag);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[3]), 67, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[4]), 68, ErrorType::Syntax_MissingLeftBracket);
     }
 
     SECTION("Same level groups missing rbrack") {
@@ -229,12 +223,11 @@ TEST_CASE("Option group nested syntax errors", "[option-group][syntax][errors]")
         cli.run("--name John --group [--classes --major Music] --classes2 [--major CS]");
         CHECK(cli.hasErrors());
         const auto& syntaxErrors = cli.getErrors().syntaxErrors;
-        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 2);
+        CheckGroup(syntaxErrors, "Syntax Errors", -1, -1, 3);
 
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]),
-            31, ErrorType::Syntax_MissingLeftBracket);
-        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]),
-            46, ErrorType::Syntax_UnknownFlag);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[0]), 12, ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[1]), 31, ErrorType::Syntax_MissingLeftBracket);
+        CheckMessage(RequireMsg(syntaxErrors.getErrors()[2]), 46, ErrorType::Syntax_UnknownFlag);
     }
 
     SECTION("Same level groups missing rbrack and then lbrack") {
@@ -270,14 +263,24 @@ TEST_CASE("Empty group", "[option-group][empty-group]") {
         cli.run("--top1[] --top2[]");
         CHECK(cli.hasErrors());
         const auto& errors = cli.getErrors().syntaxErrors;
-        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1"}, ErrorType::Analysis_EmptyGroup);
-        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top2"}, ErrorType::Analysis_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1"}, ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top2"}, ErrorType::Syntax_EmptyGroup);
     }
     SECTION("Test 2") {
         cli.run("--top1[--nested[]] --top2[--nested[]]");
         CHECK(cli.hasErrors());
         const auto& errors = cli.getErrors().syntaxErrors;
-        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1", "--nested"}, ErrorType::Analysis_EmptyGroup);
-        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top2", "--nested"}, ErrorType::Analysis_EmptyGroup);
+        CheckSyntaxErrorGroup(errors, 4);
+        CheckMessage(RequireMsg(errors.getErrors()[0]), {"--top1"},             ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[1]), {"--top1", "--nested"}, ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[2]), {"--top2"},             ErrorType::Syntax_EmptyGroup);
+        CheckMessage(RequireMsg(errors.getErrors()[3]), {"--top2", "--nested"}, ErrorType::Syntax_EmptyGroup);
+    }
+    SECTION("Test 3") {
+        cli.run("--top1[--]");
+        CHECK(cli.hasErrors());
+        cli.getErrors().syntaxErrors.printErrors();
+        cli.getErrors().analysisErrors.printErrors();
+        cli.getErrors().constraintErrors.printErrors();
     }
 }

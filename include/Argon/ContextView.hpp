@@ -6,7 +6,7 @@
 
 namespace Argon {
     class ContextView {
-        const detail::NewContext *m_context;
+        const detail::NewContext *m_context = nullptr;
     public:
         ContextView() = default;
         explicit ContextView(const detail::NewContext& context) : m_context{&context} {}

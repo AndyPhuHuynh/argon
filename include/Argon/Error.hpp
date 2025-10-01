@@ -34,12 +34,12 @@ namespace Argon {
         Syntax_MissingRightBracket,
         Syntax_UnknownFlag,
         Syntax_MultipleDoubleDash,
+        Syntax_EmptyGroup,
 
         Analysis_UnknownFlag,
         Analysis_IncorrectOptionType,
         Analysis_ConversionError,
         Analysis_UnexpectedToken,
-        Analysis_EmptyGroup,
 
         Constraint_MultiOptionCount,
         Constraint_RequiredFlag,
