@@ -18,20 +18,28 @@ int main(const int argc, const char *argv[]) {
     }
 
     argon::Cli cli{cmd};
-    const auto result = cli.run(argc, argv);
-    if (!result) {
-        for (const auto& error : result.error()) {
+    const auto results = cli.run(argc, argv);
+    if (!results) {
+        for (const auto& error : results.error()) {
             std::cout << error << "\n";
         }
         return 1;
     }
 
-    for (auto& opt: cli.root.context.get_flags() | std::views::values) {
-        const auto flag = dynamic_cast<const argon::Flag<int>*>(opt.get());
-        if (!flag) {
-            std::cout << std::format("Flag with no value: {}\n", flag->flag);
-            continue;
-        }
-        std::cout << std::format("Flag: {}, Value: {}\n", flag->flag, flag->get_value());
-    }
+    // for (auto& opt: cli.root.context.get_flags() | std::views::values) {
+    //     const auto flag = dynamic_cast<const argon::Flag<int>*>(opt.get());
+    //     if (!flag) {
+    //         std::cout << std::format("Flag with no value: {}\n", flag->flag);
+    //         continue;
+    //     }
+    //     std::cout << std::format("Flag: {}, Value: {}\n", flag->flag, flag->get_value());
+    // }
+
+    int hello = results->get_flag(hello_handle);
+    int world = results->get_flag(world_handle);
+    int bye   = results->get_flag(bye_handle);
+
+    std::cout << "Hello: " << hello << "\n";
+    std::cout << "World: " << world << "\n";
+    std::cout << "Bye: " << bye << "\n";
 }

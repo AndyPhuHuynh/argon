@@ -612,6 +612,36 @@ namespace argon::detail {
 
 
 namespace argon {
+    class Results {
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
+
+        friend class Cli;
+        explicit Results(const detail::Context& context) {
+            for (const auto& [id, flag] : context.get_flags()) {
+                m_flags.emplace(id, &flag);
+            }
+        }
+    public:
+        template <typename T>
+        auto get_flag(const FlagHandle<T>& handle) const -> T {
+            try {
+                const auto& base = m_flags.at(handle.get_id());
+                const auto value = dynamic_cast<const Flag<T>*>(base->get());
+                if (!value) {
+                    std::cerr << std::format("Invalid flag id -- internal library error");
+                    std::terminate();
+                }
+                return value->get_value();
+            } catch (const std::out_of_range&) {
+                std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
+                std::terminate();
+            }
+        }
+    };
+} // namespace argon
+
+
+namespace argon {
     class Command {
     public:
         std::string name;
@@ -630,7 +660,7 @@ namespace argon {
         Command root;
         explicit Cli(Command root_) : root(std::move(root_)) {}
 
-        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, std::vector<std::string>> {
+        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
             auto ast = detail::AstBuilder::build(argc, argv, root.context);
             if (!ast) {
                 std::cout << ast.error() << std::endl;
@@ -640,7 +670,7 @@ namespace argon {
             if (!analysisSuccess) {
                 return std::unexpected(std::move(analysisSuccess.error()));
             }
-            return {};
+            return Results{root.context};
         }
     };
 } // namespace argon
