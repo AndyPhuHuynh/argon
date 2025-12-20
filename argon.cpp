@@ -4,15 +4,12 @@ int main(const int argc, const char *argv[]) {
     auto hello_opt = argon::Flag<int>("--hello")
             .with_alias("-h");
 
-    const auto cmd = argon::Command("app")
-        .add_flag(hello_opt)
-        .add_flag(argon::Flag<int>("--world")
-            .with_alias("-w"))
-        .add_flag(argon::Flag<int>("--bye")
-            .with_alias("-b"));
+    auto cmd = argon::Command("app");
+    auto hello_handle = cmd.add_flag(hello_opt);
+    auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
+    auto bye_handle   = cmd.add_flag(argon::Flag<int>("--bye").with_alias("-b"));
 
-
-    for (const auto& opt : cmd.context.flags) {
+    for (const auto& opt : cmd.context.get_flags() | std::views::values) {
         std::cout << opt->flag << "\n";
         for (const auto& alias : opt->aliases) {
             std::cout << alias << "\n";
@@ -21,10 +18,16 @@ int main(const int argc, const char *argv[]) {
     }
 
     argon::Cli cli{cmd};
-    auto error = cli.run(argc, argv);
+    const auto result = cli.run(argc, argv);
+    if (!result) {
+        for (const auto& error : result.error()) {
+            std::cout << error << "\n";
+        }
+        return 1;
+    }
 
-    for (auto& opt: cli.root.context.flags) {
-        const auto flag = dynamic_cast<argon::Flag<int>*>(opt.get());
+    for (auto& opt: cli.root.context.get_flags() | std::views::values) {
+        const auto flag = dynamic_cast<const argon::Flag<int>*>(opt.get());
         if (!flag) {
             std::cout << std::format("Flag with no value: {}\n", flag->flag);
             continue;

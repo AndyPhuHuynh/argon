@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <algorithm>
 #include <concepts>
 #include <cstdint>
@@ -8,9 +9,12 @@
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace argon::detail {
@@ -111,7 +115,7 @@ namespace argon::detail {
     public:
         virtual ~ISetValue() = default;
     protected:
-        virtual auto set_value(std::string_view str) -> void = 0;
+        virtual auto set_value(std::string_view str) -> bool = 0;
         friend class AstAnalyzer;
     };
 
@@ -210,37 +214,38 @@ namespace argon::detail {
         ConversionFn<T> m_conversionFn = nullptr;
 
     public:
-        auto convert(std::string_view value, T& outValue) -> void {
+        auto convert(std::string_view value, T& outValue) -> bool {
             // Use custom conversion function for this specific option if supplied
             if (this->m_conversionFn != nullptr) {
-                this->m_conversionFn(value, &outValue);
+                return this->m_conversionFn(value, &outValue);
             }
             // Fallback to generic parsing
             // Parse as a floating point
-            else if constexpr (std::is_floating_point_v<T>) {
-                parse_floating_point<T>(value, outValue);
+            if constexpr (std::is_floating_point_v<T>) {
+                return parse_floating_point<T>(value, outValue);
             }
             // Parse as non-bool integral if valid
             else if constexpr (is_non_bool_integral_v<T>) {
-                parse_integral_type<T>(value, outValue);
+                return parse_integral_type<T>(value, outValue);
             }
             // Parse as boolean if T is a boolean
             else if constexpr (std::is_same_v<T, bool>) {
-                 parse_bool(value, outValue);
+                 return parse_bool(value, outValue);
             }
             // Parse as a string
             else if constexpr (std::is_same_v<T, std::string>) {
                 outValue = value;
+                return true;
             }
             // Use stream extraction if custom conversion not supplied and type is not integral
-            else if constexpr (detail::has_stream_extraction<T>::value) {
+            else if constexpr (has_stream_extraction<T>::value) {
                 auto iss = std::istringstream(std::string(value));
                 iss >> outValue;
+                return !iss.fail() && iss.eof();
             }
             // Should never reach this
             else {
-                throw std::runtime_error("Type does not support stream extraction, "
-                                         "was not an integral type, and no converter was provided.");
+                throw std::runtime_error("Custom conversion function must be provided for unsupported type");
             }
         }
 
@@ -295,8 +300,8 @@ namespace argon {
           public detail::SingleValueStorage<Flag<T>, T>,
           public detail::Converter<Flag<T>, T> {
     protected:
-        auto set_value(std::string_view str) -> void override {
-            this->convert(str, this->valueStorage);
+        auto set_value(std::string_view str) -> bool override {
+            return this->convert(str, this->valueStorage);
         }
 
     public:
@@ -320,29 +325,81 @@ namespace argon {
 
 
 namespace argon::detail {
+    class UniqueId {
+        size_t m_id;
+
+        static auto next() -> size_t {
+            static std::atomic<size_t> counter{0};
+            return counter.fetch_add(1, std::memory_order_relaxed);
+        }
+    public:
+        UniqueId() : m_id(next()) {}
+        [[nodiscard]] auto get_id() const -> size_t { return m_id; }
+        auto operator<=>(const UniqueId&) const = default;
+    };
+} // namespace argon::detail
+
+
+namespace argon {
+    template <typename T>
+    class FlagHandle {
+        detail::UniqueId m_id;
+
+    public:
+        [[nodiscard]] auto get_id() const -> detail::UniqueId {
+            return m_id;
+        }
+    };
+} // namespace argon
+
+
+template <>
+struct std::hash<argon::detail::UniqueId> {
+    auto operator()(const argon::detail::UniqueId& id) const noexcept -> std::size_t {
+        return id.get_id();
+    }
+};
+
+namespace argon::detail {
     struct Context {
-        std::vector<Polymorphic<FlagBase>> flags;
+    private:
+        std::unordered_map<UniqueId, Polymorphic<FlagBase>> m_flags;
+
+    public:
+        template <typename T>
+        [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
+            FlagHandle<T> handle{};
+            m_flags.emplace(handle.get_id(), detail::make_polymorphic<FlagBase>(std::move(flag)));
+            return handle;
+        }
 
         [[nodiscard]] auto contains_flag(std::string_view flagName) const -> bool {
-            return std::ranges::find_if(flags, [&](auto&& flag) -> bool {
+            return std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
+                const auto& flag = pair.second;
                 return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
-            }) != flags.end();
+            }) != m_flags.end();
         }
 
         [[nodiscard]] auto get_flag(std::string_view flagName) -> FlagBase * {
-            const auto it = std::ranges::find_if(flags, [&](auto&& flag) -> bool {
+            const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
+                const auto& flag = pair.second;
                 return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
             });
-            if (it == flags.end()) return nullptr;
-            return it->get();
+            if (it == m_flags.end()) return nullptr;
+            return it->second.get();
         }
 
         [[nodiscard]] auto get_flag(std::string_view flagName) const -> const FlagBase * {
-            const auto it = std::ranges::find_if(flags, [&](auto&& flag) -> bool {
+            const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
+                const auto& flag = pair.second;
                 return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
             });
-            if (it == flags.end()) return nullptr;
-            return it->get();
+            if (it == m_flags.end()) return nullptr;
+            return it->second.get();
+        }
+
+        [[nodiscard]] auto get_flags() const -> const std::unordered_map<UniqueId, Polymorphic<FlagBase>>& {
+            return m_flags;
         }
     };
 } // namespace argon::detail
@@ -495,18 +552,60 @@ namespace argon::detail {
             return parse_root(tokenizer, context);
         }
     };
+} // namespace argon::detail
+
+
+namespace argon::detail {
+    struct AnalysisError_UnknownFlag {
+        std::string name;
+    };
+
+    struct AnalysisError_Conversion {
+        std::string name;
+        std::string value;
+    };
+
+    using AnalysisError = std::variant<AnalysisError_UnknownFlag, AnalysisError_Conversion>;
+
+    [[nodiscard]] inline auto format_analysis_error(const AnalysisError& error) -> std::string {
+        return std::visit([]<typename T>(const T& err) -> std::string{
+            if constexpr (std::is_same_v<T, AnalysisError_UnknownFlag>) {
+                return std::format("Unknown flag '{}'", err.name);
+            } else if constexpr (std::is_same_v<T, AnalysisError_Conversion>) {
+                return std::format("Invalid value '{}' for flag '{}'", err.value, err.name);
+            } else {
+                throw std::invalid_argument("Unadded type to format_analysis_error");
+            }
+        }, error);
+    }
 
     class AstAnalyzer {
     public:
-        static auto analyze_ast(const AstContext& ast, Context& context) {
+        [[nodiscard]] static auto analyze(
+            const AstContext& ast,
+            Context& context
+        ) -> std::expected<void, std::vector<std::string>> {
+            std::vector<AnalysisError> errors;
+
             for (const auto& [name, value] : ast.flags) {
                 const auto opt = context.get_flag(name);
                 if (!opt) {
-                    std::cerr << "Invalid flag name: " << name << std::endl;
+                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
                     continue;
                 }
-                opt->set_value(value.value);
+                const bool success = opt->set_value(value.value);
+                if (!success) {
+                    errors.emplace_back(AnalysisError_Conversion{
+                        .name = name,
+                        .value = value.value
+                    });
+                }
             }
+
+            if (errors.empty()) return {};
+            return std::unexpected(std::views::transform(errors, [](const AnalysisError& error) -> std::string
+                { return format_analysis_error(error); })
+                | std::ranges::to<std::vector>());
         }
     };
 } // namespace argon::detail
@@ -520,10 +619,9 @@ namespace argon {
 
         explicit Command(const std::string_view name_) : name(name_) {}
 
-        template <typename T> requires (std::derived_from<std::remove_cvref_t<T>, detail::FlagBase>)
-        auto add_flag(T&& flag) -> Command& {
-            context.flags.emplace_back(detail::make_polymorphic<detail::FlagBase>(std::forward<T>(flag)));
-            return *this;
+        template <typename T>
+        [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
+            return context.add_flag(std::move(flag));
         }
     };
 
@@ -532,13 +630,16 @@ namespace argon {
         Command root;
         explicit Cli(Command root_) : root(std::move(root_)) {}
 
-        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, std::string> {
+        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, std::vector<std::string>> {
             auto ast = detail::AstBuilder::build(argc, argv, root.context);
             if (!ast) {
                 std::cout << ast.error() << std::endl;
-                return std::unexpected(std::move(ast.error()));
+                return std::unexpected(std::vector{std::move(ast.error())});
             }
-            detail::AstAnalyzer::analyze_ast(ast.value(), root.context);
+            auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context);
+            if (!analysisSuccess) {
+                return std::unexpected(std::move(analysisSuccess.error()));
+            }
             return {};
         }
     };
