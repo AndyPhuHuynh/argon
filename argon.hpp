@@ -282,13 +282,26 @@ namespace argon::detail {
 
 namespace argon::detail {
     class FlagBase : public ISetValue {
+    protected:
+        std::string m_flag;
+        std::vector<std::string> m_aliases;
     public:
-        std::string flag;
-        std::vector<std::string> aliases;
-
         FlagBase() = default;
-        explicit FlagBase(const std::string_view flag_) : flag(flag_) {};
+        explicit FlagBase(const std::string_view flag) : m_flag(flag) {};
         ~FlagBase() override = default;
+
+        [[nodiscard]] auto get_flag() const -> const std::string& { return m_flag; }
+        [[nodiscard]] auto get_aliases() const -> const std::vector<std::string>& { return m_aliases; }
+    };
+
+    class PositionalBase : public ISetValue {
+    protected:
+        std::optional<std::string> m_name;
+    public:
+        PositionalBase() = default;
+        explicit PositionalBase(const std::string_view name) : m_name(name) {};
+
+        [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
     };
 } // namespace argon::detail
 
@@ -306,20 +319,31 @@ namespace argon {
 
     public:
         explicit Flag(const std::string_view flag) : FlagBase(flag) {}
-        Flag(const Flag& other) = default;
-        Flag(Flag&& other) noexcept = default;
-        Flag& operator=(const Flag& other) = default;
-        Flag& operator=(Flag&& other) noexcept = default;
 
         auto with_alias(std::string_view alias) & -> Flag& {
-            this->aliases.emplace_back(alias);
+            this->m_aliases.emplace_back(alias);
             return *this;
         }
 
         auto with_alias(std::string_view alias) && -> Flag {
-            this->aliases.emplace_back(alias);
+            this->m_aliases.emplace_back(alias);
             return std::move(*this);
         }
+    };
+
+    template <typename T>
+    class Positional
+        : public detail::PositionalBase,
+          public detail::SingleValueStorage<Positional<T>, T>,
+          public detail::Converter<Positional<T>, T> {
+    protected:
+        auto set_value(std::string_view str) -> bool override {
+            return this->convert(str, this->valueStorage);
+        }
+
+    public:
+        Positional() = default;
+        explicit Positional(const std::string_view name) : PositionalBase(name) {}
     };
  } // namespace argon::detail
 
@@ -341,8 +365,8 @@ namespace argon::detail {
 
 
 namespace argon {
-    template <typename T>
-    class FlagHandle {
+    template <typename T, typename Tag>
+    class Handle {
         detail::UniqueId m_id;
 
     public:
@@ -350,6 +374,9 @@ namespace argon {
             return m_id;
         }
     };
+
+    template <typename T> using FlagHandle = Handle<T, detail::FlagBase>;
+    template <typename T> using PositionalHandle = Handle<T, detail::PositionalBase>;
 } // namespace argon
 
 
@@ -364,6 +391,8 @@ namespace argon::detail {
     struct Context {
     private:
         std::unordered_map<UniqueId, Polymorphic<FlagBase>> m_flags;
+        std::unordered_map<UniqueId, Polymorphic<PositionalBase>> m_positionals;
+        std::vector<UniqueId> m_positionalOrder;
 
     public:
         template <typename T>
@@ -373,17 +402,25 @@ namespace argon::detail {
             return handle;
         }
 
+        template <typename T>
+        [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
+            PositionalHandle<T> handle{};
+            m_positionalOrder.emplace_back(handle.get_id());
+            m_positionals.emplace(handle.get_id(), detail::make_polymorphic<PositionalBase>(std::move(positional)));
+            return handle;
+        }
+
         [[nodiscard]] auto contains_flag(std::string_view flagName) const -> bool {
             return std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
                 const auto& flag = pair.second;
-                return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
+                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
             }) != m_flags.end();
         }
 
         [[nodiscard]] auto get_flag(std::string_view flagName) -> FlagBase * {
             const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
                 const auto& flag = pair.second;
-                return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
+                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
             });
             if (it == m_flags.end()) return nullptr;
             return it->second.get();
@@ -392,7 +429,7 @@ namespace argon::detail {
         [[nodiscard]] auto get_flag(std::string_view flagName) const -> const FlagBase * {
             const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
                 const auto& flag = pair.second;
-                return flag->flag == flagName || std::ranges::contains(flag->aliases, flagName);
+                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
             });
             if (it == m_flags.end()) return nullptr;
             return it->second.get();
@@ -400,6 +437,19 @@ namespace argon::detail {
 
         [[nodiscard]] auto get_flags() const -> const std::unordered_map<UniqueId, Polymorphic<FlagBase>>& {
             return m_flags;
+        }
+
+        [[nodiscard]] auto get_positional(const size_t index) -> PositionalBase * {
+            if (index >= m_positionalOrder.size()) return nullptr;
+            return m_positionals.at(m_positionalOrder[index]).get();
+        }
+
+        [[nodiscard]] auto get_num_positionals() const -> size_t {
+            return m_positionals.size();
+        }
+
+        [[nodiscard]] auto get_positionals() const -> const std::unordered_map<UniqueId, Polymorphic<PositionalBase>>& {
+            return m_positionals;
         }
     };
 } // namespace argon::detail
@@ -411,7 +461,6 @@ namespace argon::detail {
         LEFT_BRACKET,
         RIGHT_BRACKET,
         DOUBLE_DASH,
-        END
     };
 
     struct Token {
@@ -489,12 +538,16 @@ namespace argon::detail {
 
     struct AstContext {
         std::vector<FlagAst> flags;
-        std::vector<PositionalAst> positional;
+        std::vector<PositionalAst> positionals;
         std::vector<GroupAst> groups;
     };
 
     class AstBuilder {
-        [[nodiscard]] static auto parse_flag(Tokenizer& tokenizer, const Context& context) -> std::expected<FlagAst, std::string> {
+        [[nodiscard]] static auto parse_flag(
+            Tokenizer& tokenizer,
+            const Context& context,
+            AstContext& astContext
+        ) -> std::expected<void, std::string> {
             const auto flagName = tokenizer.peek_token();
             if (!flagName) {
                 return std::unexpected(std::format("Expected flag name, however reached end of arguments"));
@@ -515,28 +568,60 @@ namespace argon::detail {
             }
             if (flagValue->kind != TokenKind::STRING) {
                 return std::unexpected(
-                    std::format(R"(Unexpected '{}' while parsing value for flag '{}')", flagValue->image, flagName->image)
+                    std::format(R"(Unexpected token '{}' while parsing value for flag '{}')", flagValue->image, flagName->image)
                 );
             }
             tokenizer.next_token();
 
-            return FlagAst{
+            FlagAst flagAst{
                 .name = flagName->image,
-                .value = flagValue->image
+                .value = AstValue {
+                    .value = flagValue->image,
+                    .argvPosition = flagValue->argvPosition
+                }
             };
+            std::cout << std::format("Name: {}, Value: {}\n", flagAst.name, flagAst.value.value);
+            astContext.flags.emplace_back(std::move(flagAst));
+            return {};
+        }
+
+        [[nodiscard]] static auto parse_positional(
+            Tokenizer& tokenizer,
+            const Context& context,
+            AstContext& astContext
+        ) -> std::expected<void, std::string> {
+            const auto value = tokenizer.peek_token();
+            if (!value) {
+                return std::unexpected(std::format("Expected flag name, however reached end of arguments"));
+            }
+            if (astContext.positionals.size() >= context.get_num_positionals()) {
+                return std::unexpected(std::format(
+                        "Unexpected token '{}' found at position {}",
+                        value->image, value->argvPosition));
+            }
+            tokenizer.next_token();
+
+            astContext.positionals.emplace_back(PositionalAst{ .value = AstValue {
+                .value = value->image,
+                .argvPosition = value->argvPosition
+            } });
+            return {};
         }
 
         [[nodiscard]] static auto parse_root(Tokenizer& tokenizer, const Context& context) -> std::expected<AstContext, std::string> {
             AstContext astContext;
             while (const auto optToken = tokenizer.peek_token()) {
+                if (optToken->kind == TokenKind::LEFT_BRACKET || optToken->kind == TokenKind::RIGHT_BRACKET) {
+                    return std::unexpected(std::format(
+                        "Unexpected token '{}' found at position {}",
+                        optToken->image, optToken->argvPosition));
+                }
                 if (context.contains_flag(optToken->image)) {
-                    auto flagAst = parse_flag(tokenizer, context);
-                    if (!flagAst) return std::unexpected(std::move(flagAst.error()));
-                    std::cout << std::format("Name: {}, Value: {}\n", flagAst->name, flagAst->value.value);
-                    astContext.flags.emplace_back(std::move(flagAst.value()));
+                    auto success = parse_flag(tokenizer, context, astContext);
+                    if (!success) return std::unexpected(std::move(success.error()));
                 } else {
-                    std::cout << "Invalid token: " << optToken->image << std::endl;
-                    tokenizer.next_token();
+                    auto success = parse_positional(tokenizer, context, astContext);
+                    if (!success) return std::unexpected(std::move(success.error()));
                 }
             }
             return astContext;
@@ -560,19 +645,43 @@ namespace argon::detail {
         std::string name;
     };
 
-    struct AnalysisError_Conversion {
+    struct AnalysisError_FlagConversion {
         std::string name;
         std::string value;
+        int32_t argvPosition;
     };
 
-    using AnalysisError = std::variant<AnalysisError_UnknownFlag, AnalysisError_Conversion>;
+    struct AnalysisError_PositionalConversion {
+        std::optional<std::string> name;
+        std::string value;
+        int32_t argvPosition;
+    };
+
+    struct AnalysisError_TooManyPositionals {
+        size_t max;
+        size_t actual;
+    };
+
+    using AnalysisError = std::variant<
+        AnalysisError_UnknownFlag,
+        AnalysisError_FlagConversion,
+        AnalysisError_PositionalConversion,
+        AnalysisError_TooManyPositionals
+    >;
 
     [[nodiscard]] inline auto format_analysis_error(const AnalysisError& error) -> std::string {
         return std::visit([]<typename T>(const T& err) -> std::string{
             if constexpr (std::is_same_v<T, AnalysisError_UnknownFlag>) {
                 return std::format("Unknown flag '{}'", err.name);
-            } else if constexpr (std::is_same_v<T, AnalysisError_Conversion>) {
+            } else if constexpr (std::is_same_v<T, AnalysisError_FlagConversion>) {
                 return std::format("Invalid value '{}' for flag '{}'", err.value, err.name);
+            } else if constexpr (std::is_same_v<T, AnalysisError_PositionalConversion>) {
+                if (err.name) {
+                    return std::format("Invalid value '{}' for positional argument '{}'", err.value, err.name.value());
+                }
+                return std::format("Invalid value '{}' for positional argument", err.value);
+            } else if constexpr (std::is_same_v<T, AnalysisError_TooManyPositionals>) {
+                return std::format("Max of {} positional arguments, however {} encountered", err.max, err.actual);
             } else {
                 throw std::invalid_argument("Unadded type to format_analysis_error");
             }
@@ -595,11 +704,31 @@ namespace argon::detail {
                 }
                 const bool success = opt->set_value(value.value);
                 if (!success) {
-                    errors.emplace_back(AnalysisError_Conversion{
+                    errors.emplace_back(AnalysisError_FlagConversion{
                         .name = name,
-                        .value = value.value
+                        .value = value.value,
+                        .argvPosition = value.argvPosition
                     });
                 }
+            }
+
+            for (size_t i = 0; i < ast.positionals.size() && i < context.get_num_positionals(); ++i) {
+                const auto opt = context.get_positional(i);
+                if (!opt) continue;
+                const bool success = opt->set_value(ast.positionals[i].value.value);
+                if (!success) {
+                    errors.emplace_back(AnalysisError_PositionalConversion{
+                        .name = opt->get_name(),
+                        .value = ast.positionals[i].value.value,
+                        .argvPosition = ast.positionals[i].value.argvPosition
+                    });
+                }
+            }
+            if (ast.positionals.size() > context.get_num_positionals()) {
+                errors.emplace_back(AnalysisError_TooManyPositionals{
+                    .max = context.get_num_positionals(),
+                    .actual = ast.positionals.size()
+                });
             }
 
             if (errors.empty()) return {};
@@ -614,11 +743,15 @@ namespace argon::detail {
 namespace argon {
     class Results {
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
 
         friend class Cli;
         explicit Results(const detail::Context& context) {
             for (const auto& [id, flag] : context.get_flags()) {
                 m_flags.emplace(id, &flag);
+            }
+            for (const auto& [id, positional] : context.get_positionals()) {
+                m_positionals.emplace(id, &positional);
             }
         }
     public:
@@ -628,7 +761,25 @@ namespace argon {
                 const auto& base = m_flags.at(handle.get_id());
                 const auto value = dynamic_cast<const Flag<T>*>(base->get());
                 if (!value) {
-                    std::cerr << std::format("Invalid flag id -- internal library error");
+                    std::cerr << std::format("Invalid flag id -- internal library error. "
+                                             "Flag ID and templated type do not match");
+                    std::terminate();
+                }
+                return value->get_value();
+            } catch (const std::out_of_range&) {
+                std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
+                std::terminate();
+            }
+        }
+
+        template <typename T>
+        auto get_positional(const PositionalHandle<T>& handle) const -> T {
+            try {
+                const auto& base = m_positionals.at(handle.get_id());
+                const auto value = dynamic_cast<const Positional<T>*>(base->get());
+                if (!value) {
+                    std::cerr << std::format("Invalid flag id -- internal library error. "
+                                             "Flag ID and templated type do not match");
                     std::terminate();
                 }
                 return value->get_value();
@@ -653,6 +804,11 @@ namespace argon {
         [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
             return context.add_flag(std::move(flag));
         }
+
+        template <typename T>
+        [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
+            return context.add_positional(std::move(positional));
+        }
     };
 
     class Cli {
@@ -662,14 +818,11 @@ namespace argon {
 
         [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
             auto ast = detail::AstBuilder::build(argc, argv, root.context);
-            if (!ast) {
-                std::cout << ast.error() << std::endl;
-                return std::unexpected(std::vector{std::move(ast.error())});
-            }
+            if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
+
             auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context);
-            if (!analysisSuccess) {
-                return std::unexpected(std::move(analysisSuccess.error()));
-            }
+            if (!analysisSuccess) return std::unexpected(std::move(analysisSuccess.error()));
+
             return Results{root.context};
         }
     };
