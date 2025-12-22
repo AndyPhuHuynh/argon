@@ -112,10 +112,24 @@ namespace argon::detail {
     }
 
     class ISetValue {
+    protected:
+        bool m_isSet = false;
+
     public:
         virtual ~ISetValue() = default;
+        [[nodiscard]] auto is_set() const -> bool { return m_isSet; }
+
+    private:
+        auto set_value(const std::string_view str) -> bool {
+            if (set_value_impl(str)) {
+                m_isSet = true;
+                return true;
+            }
+            return false;
+        }
+
     protected:
-        virtual auto set_value(std::string_view str) -> bool = 0;
+        virtual auto set_value_impl(std::string_view str) -> bool = 0;
         friend class AstAnalyzer;
     };
 
@@ -313,7 +327,7 @@ namespace argon {
           public detail::SingleValueStorage<Flag<T>, T>,
           public detail::Converter<Flag<T>, T> {
     protected:
-        auto set_value(std::string_view str) -> bool override {
+        auto set_value_impl(std::string_view str) -> bool override {
             return this->convert(str, this->valueStorage);
         }
 
@@ -337,7 +351,7 @@ namespace argon {
           public detail::SingleValueStorage<Positional<T>, T>,
           public detail::Converter<Positional<T>, T> {
     protected:
-        auto set_value(std::string_view str) -> bool override {
+        auto set_value_impl(std::string_view str) -> bool override {
             return this->convert(str, this->valueStorage);
         }
 
@@ -739,13 +753,16 @@ namespace argon::detail {
     };
 } // namespace argon::detail
 
+namespace argon::detail { class ConstraintValidator; }
 
 namespace argon {
     class Results {
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
 
+        friend class detail::ConstraintValidator;
         friend class Cli;
+
         explicit Results(const detail::Context& context) {
             for (const auto& [id, flag] : context.get_flags()) {
                 m_flags.emplace(id, &flag);
@@ -754,22 +771,27 @@ namespace argon {
                 m_positionals.emplace(id, &positional);
             }
         }
-    public:
-        template <typename T>
-        auto get_flag(const FlagHandle<T>& handle) const -> T {
+
+        auto get_flag_base(const detail::UniqueId id) const -> const detail::FlagBase * {
             try {
-                const auto& base = m_flags.at(handle.get_id());
-                const auto value = dynamic_cast<const Flag<T>*>(base->get());
-                if (!value) {
-                    std::cerr << std::format("Invalid flag id -- internal library error. "
-                                             "Flag ID and templated type do not match");
-                    std::terminate();
-                }
-                return value->get_value();
+                return m_flags.at(id)->get();
             } catch (const std::out_of_range&) {
                 std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
                 std::terminate();
             }
+        }
+
+    public:
+        template <typename T>
+        auto get_flag(const FlagHandle<T>& handle) const -> T {
+            const auto base = get_flag_base(handle.get_id());
+            const auto value = dynamic_cast<const Flag<T>*>(base);
+            if (!value) {
+                std::cerr << std::format("Invalid flag id -- internal library error. "
+                                         "Flag ID and templated type do not match");
+                std::terminate();
+            }
+            return value->get_value();
         }
 
         template <typename T>
@@ -790,6 +812,45 @@ namespace argon {
         }
     };
 } // namespace argon
+
+
+namespace argon {
+    class Constraints {
+        std::vector<detail::UniqueId> m_requiredFlags;
+
+        friend class detail::ConstraintValidator;
+    public:
+        Constraints() = default;
+
+        template <typename T>
+        auto required(const FlagHandle<T>& handle) -> void {
+            m_requiredFlags.emplace_back(handle.get_id());
+        }
+    };
+} // namespace argon
+
+
+namespace argon::detail {
+    class ConstraintValidator {
+    public:
+        static auto validate(
+            const Constraints& constraints,
+            const Results& results
+        ) -> std::expected<void, std::vector<std::string>> {
+            std::vector<std::string> errors;
+
+            for (const auto& id : constraints.m_requiredFlags) {
+                const auto base = results.get_flag_base(id);
+                if (!base->is_set()) {
+                    errors.emplace_back(std::format("Flag '{}' is required and must be set", base->get_flag()));
+                }
+            }
+
+            if (!errors.empty()) return std::unexpected(std::move(errors));
+            return {};
+        }
+    };
+}
 
 
 namespace argon {
@@ -814,7 +875,10 @@ namespace argon {
     class Cli {
     public:
         Command root;
+        Constraints constraints;
+
         explicit Cli(Command root_) : root(std::move(root_)) {}
+        explicit Cli(Command root_, Constraints constraints_) : root(std::move(root_)), constraints(std::move(constraints_)) {}
 
         [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
             auto ast = detail::AstBuilder::build(argc, argv, root.context);
@@ -823,7 +887,11 @@ namespace argon {
             auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context);
             if (!analysisSuccess) return std::unexpected(std::move(analysisSuccess.error()));
 
-            return Results{root.context};
+            Results results{root.context};
+            auto constraintSuccess = detail::ConstraintValidator::validate(constraints, results);
+            if (!constraintSuccess) return std::unexpected(std::move(constraintSuccess.error()));
+
+            return results;
         }
     };
 } // namespace argon
