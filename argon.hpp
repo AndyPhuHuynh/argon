@@ -114,22 +114,26 @@ namespace argon::detail {
     class ISetValue {
     protected:
         bool m_isSet = false;
+        bool m_isImplicitSet = false;
 
     public:
         virtual ~ISetValue() = default;
         [[nodiscard]] auto is_set() const -> bool { return m_isSet; }
-
+        [[nodiscard]] auto is_implicit_set() const -> bool { return m_isImplicitSet; }
     private:
-        auto set_value(const std::string_view str) -> bool {
+        auto set_value(const std::optional<const std::string_view>& str) -> std::expected<void, std::string> {
             if (set_value_impl(str)) {
                 m_isSet = true;
-                return true;
+                return {};
             }
-            return false;
+            // TODO: Error message here
+            return std::unexpected("Todo");
         }
 
     protected:
-        virtual auto set_value_impl(std::string_view str) -> bool = 0;
+        virtual auto set_value_impl(std::optional<const std::string_view> str) -> bool = 0;
+
+        template <typename, typename> friend class ImplicitValue;
         friend class AstAnalyzer;
     };
 
@@ -265,30 +269,51 @@ namespace argon::detail {
 
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) & -> Derived& {
             m_conversionFn = conversionFn;
-            return static_cast<Derived&>(*this);
+            return *this;
         }
 
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) && -> Derived&& {
             m_conversionFn = conversionFn;
-            return static_cast<Derived&&>(*this);
+            return std::move(*this);
         }
     };
 
     template <typename Derived, typename T>
     class SingleValueStorage {
     protected:
-        T valueStorage;
+        T m_valueStorage;
     public:
-        auto get_value() const -> T { return this->valueStorage; }
+        auto get_value() const -> T { return this->m_valueStorage; }
 
         auto with_default(T defaultValue) & -> Derived& {
-            valueStorage = defaultValue;
-            return *this;
+            m_valueStorage = defaultValue;
+            return static_cast<Derived&>(*this);
         }
 
-        auto with_default(T defaultValue) && -> Derived {
-            valueStorage = defaultValue;
-            return std::move(*this);
+        auto with_default(T defaultValue) && -> Derived&& {
+            m_valueStorage = defaultValue;
+            return static_cast<Derived&&>(*this);
+        }
+    };
+
+    template <typename Derived, typename T>
+    class ImplicitValue {
+    protected:
+        T m_implicitValue;
+
+    public:
+        auto with_implicit(T implicitValue) & -> Derived& {
+            auto& derived = static_cast<Derived&>(*this);
+            derived.m_isImplicitSet = true;
+            m_implicitValue = implicitValue;
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_implicit(T implicitValue) && -> Derived&& {
+            auto& derived = static_cast<Derived&>(*this);
+            derived.m_isImplicitSet = true;
+            m_implicitValue = implicitValue;
+            return static_cast<Derived&&>(*this);
         }
     };
 } // namespace argon::detail
@@ -325,10 +350,18 @@ namespace argon {
     class Flag
         : public detail::FlagBase,
           public detail::SingleValueStorage<Flag<T>, T>,
-          public detail::Converter<Flag<T>, T> {
+          public detail::Converter<Flag<T>, T>,
+          public detail::ImplicitValue<Flag<T>, T> {
     protected:
-        auto set_value_impl(std::string_view str) -> bool override {
-            return this->convert(str, this->valueStorage);
+        auto set_value_impl(std::optional<const std::string_view> str) -> bool override {
+            if (str == std::nullopt) {
+                if (!this->is_implicit_set()) {
+                    return false;
+                }
+                this->m_valueStorage = this->m_implicitValue;
+                return true;
+            }
+            return this->convert(str.value(), this->m_valueStorage);
         }
 
     public:
@@ -351,8 +384,8 @@ namespace argon {
           public detail::SingleValueStorage<Positional<T>, T>,
           public detail::Converter<Positional<T>, T> {
     protected:
-        auto set_value_impl(std::string_view str) -> bool override {
-            return this->convert(str, this->valueStorage);
+        auto set_value_impl(std::optional<const std::string_view> str) -> bool override {
+            return this->convert(str.value(), this->m_valueStorage);
         }
 
     public:
@@ -424,14 +457,11 @@ namespace argon::detail {
             return handle;
         }
 
-        [[nodiscard]] auto contains_flag(std::string_view flagName) const -> bool {
-            return std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
-                const auto& flag = pair.second;
-                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
-            }) != m_flags.end();
+        [[nodiscard]] auto contains_flag(const std::string_view flagName) const -> bool {
+            return get_flag(flagName) != nullptr;
         }
 
-        [[nodiscard]] auto get_flag(std::string_view flagName) -> FlagBase * {
+        [[nodiscard]] auto get_flag(const std::string_view flagName) -> FlagBase * {
             const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
                 const auto& flag = pair.second;
                 return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
@@ -440,7 +470,7 @@ namespace argon::detail {
             return it->second.get();
         }
 
-        [[nodiscard]] auto get_flag(std::string_view flagName) const -> const FlagBase * {
+        [[nodiscard]] auto get_flag(const std::string_view flagName) const -> const FlagBase * {
             const auto it = std::ranges::find_if(m_flags, [&](auto&& pair) -> bool {
                 const auto& flag = pair.second;
                 return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
@@ -538,7 +568,7 @@ namespace argon::detail {
 
     struct FlagAst {
         std::string name;
-        AstValue value;
+        std::optional<AstValue> value;
     };
 
     struct PositionalAst {
@@ -577,13 +607,28 @@ namespace argon::detail {
             tokenizer.next_token();
 
             const auto flagValue = tokenizer.peek_token();
+            const auto flag = context.get_flag(flagName->image);
+            const bool valueIsFlag = flagValue.has_value() &&
+                flagValue->kind == TokenKind::STRING && context.contains_flag(flagValue->image);
+            if (flag->is_implicit_set() && (valueIsFlag || !flagValue)) {
+                FlagAst flagAst{
+                    .name = flagName->image,
+                    .value = std::nullopt
+                };
+                astContext.flags.emplace_back(std::move(flagAst));
+                return {};
+            }
+            if (!flag->is_implicit_set() && valueIsFlag) {
+                return std::unexpected(
+                    std::format("Flag '{}' does not have an implicit value and no value was given", flagName->image));
+            }
+
             if (!flagValue) {
                 return std::unexpected(std::format("Expected flag value, however reached end of arguments"));
             }
             if (flagValue->kind != TokenKind::STRING) {
                 return std::unexpected(
-                    std::format(R"(Unexpected token '{}' while parsing value for flag '{}')", flagValue->image, flagName->image)
-                );
+                    std::format(R"(Unexpected token '{}' while parsing value for flag '{}')", flagValue->image, flagName->image));
             }
             tokenizer.next_token();
 
@@ -594,7 +639,6 @@ namespace argon::detail {
                     .argvPosition = flagValue->argvPosition
                 }
             };
-            std::cout << std::format("Name: {}, Value: {}\n", flagAst.name, flagAst.value.value);
             astContext.flags.emplace_back(std::move(flagAst));
             return {};
         }
@@ -661,14 +705,14 @@ namespace argon::detail {
 
     struct AnalysisError_FlagConversion {
         std::string name;
-        std::string value;
-        int32_t argvPosition;
+        std::optional<AstValue> value;
+        std::string errorMsg;
     };
 
     struct AnalysisError_PositionalConversion {
         std::optional<std::string> name;
-        std::string value;
-        int32_t argvPosition;
+        AstValue value;
+        std::string errorMsg;
     };
 
     struct AnalysisError_TooManyPositionals {
@@ -687,16 +731,23 @@ namespace argon::detail {
         return std::visit([]<typename T>(const T& err) -> std::string{
             if constexpr (std::is_same_v<T, AnalysisError_UnknownFlag>) {
                 return std::format("Unknown flag '{}'", err.name);
-            } else if constexpr (std::is_same_v<T, AnalysisError_FlagConversion>) {
-                return std::format("Invalid value '{}' for flag '{}'", err.value, err.name);
-            } else if constexpr (std::is_same_v<T, AnalysisError_PositionalConversion>) {
-                if (err.name) {
-                    return std::format("Invalid value '{}' for positional argument '{}'", err.value, err.name.value());
+            }
+            else if constexpr (std::is_same_v<T, AnalysisError_FlagConversion>) {
+                if (err.value) {
+                    return std::format("Invalid value '{}' for flag '{}'", err.value.value().value, err.name);
                 }
-                return std::format("Invalid value '{}' for positional argument", err.value);
-            } else if constexpr (std::is_same_v<T, AnalysisError_TooManyPositionals>) {
+                return std::format("Flag '{}' does not have an implicit value and no value was given", err.name);
+            }
+            else if constexpr (std::is_same_v<T, AnalysisError_PositionalConversion>) {
+                if (err.name) {
+                    return std::format("Invalid value '{}' for positional argument '{}'", err.value.value, err.name.value());
+                }
+                return std::format("Invalid value '{}' for positional argument", err.value.value);
+            }
+            else if constexpr (std::is_same_v<T, AnalysisError_TooManyPositionals>) {
                 return std::format("Max of {} positional arguments, however {} encountered", err.max, err.actual);
-            } else {
+            }
+            else {
                 throw std::invalid_argument("Unadded type to format_analysis_error");
             }
         }, error);
@@ -716,12 +767,14 @@ namespace argon::detail {
                     errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
                     continue;
                 }
-                const bool success = opt->set_value(value.value);
+                auto success = opt->set_value(value ?
+                    std::optional<std::string_view>{value->value} :
+                    std::optional<std::string_view>{std::nullopt});
                 if (!success) {
                     errors.emplace_back(AnalysisError_FlagConversion{
                         .name = name,
-                        .value = value.value,
-                        .argvPosition = value.argvPosition
+                        .value = value,
+                        .errorMsg = std::move(success.error())
                     });
                 }
             }
@@ -729,12 +782,12 @@ namespace argon::detail {
             for (size_t i = 0; i < ast.positionals.size() && i < context.get_num_positionals(); ++i) {
                 const auto opt = context.get_positional(i);
                 if (!opt) continue;
-                const bool success = opt->set_value(ast.positionals[i].value.value);
+                auto success = opt->set_value(ast.positionals[i].value.value);
                 if (!success) {
                     errors.emplace_back(AnalysisError_PositionalConversion{
                         .name = opt->get_name(),
-                        .value = ast.positionals[i].value.value,
-                        .argvPosition = ast.positionals[i].value.argvPosition
+                        .value = ast.positionals[i].value,
+                        .errorMsg = std::move(success.error())
                     });
                 }
             }

@@ -2,10 +2,13 @@
 
 int main(const int argc, const char *argv[]) {
     auto cmd = argon::Command("app");
-    auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello").with_alias("-h"));
+    auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello").with_alias("-h")
+        .with_implicit(2025));
     auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
     auto bye_handle   = cmd.add_flag(argon::Flag<int>("--bye").with_alias("-b"));
-    auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s"));
+    auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s")
+        .with_default("default value!")
+        .with_implicit("implicit value!"));
     auto pos_handle   = cmd.add_positional(argon::Positional<std::string>());
 
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
@@ -17,7 +20,7 @@ int main(const int argc, const char *argv[]) {
     }
 
     argon::Constraints constraints{};
-    constraints.required(str_handle);
+    constraints.required(bye_handle);
 
     argon::Cli cli{cmd, constraints};
     const auto results = cli.run(argc, argv);
