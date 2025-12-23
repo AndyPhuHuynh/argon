@@ -32,15 +32,15 @@ int main(const int argc, const char *argv[]) {
     }
 
     std::cout << "No errors woohoo!\n";
-    int hello = results->get_flag(hello_handle);
-    int world = results->get_flag(world_handle);
-    int bye   = results->get_flag(bye_handle);
-    std::string str = results->get_flag(str_handle);
-    std::string pos = results->get_positional(pos_handle);
+    std::optional<int> hello = results->get(hello_handle);
+    std::optional<int> world = results->get(world_handle);
+    std::optional<int> bye   = results->get(bye_handle);
+    std::optional<std::string> str = results->get(str_handle);
+    std::optional<std::string> pos = results->get(pos_handle);
 
-    std::cout << "Hello: " << hello << "\n";
-    std::cout << "World: " << world << "\n";
-    std::cout << "Bye: " << bye << "\n";
-    std::cout << "Str: " << str << "\n";
-    std::cout << "Pos: " << pos << "\n";
+    std::cout << "Hello: " << (hello ? hello.value() : -1)     << "\n";
+    std::cout << "World: " << (world ? world.value() : -1)     << "\n";
+    std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
+    std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
+    std::cout << "Pos: "   << (pos ? pos.value() : "no value") << "\n";
 }

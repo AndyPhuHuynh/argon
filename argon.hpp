@@ -27,7 +27,7 @@ namespace argon::detail {
     };
 
     template <typename Base, typename Derived>
-    class PolymorphicModel : public PolymorphicBase<Base> {
+    class PolymorphicModel final : public PolymorphicBase<Base> {
         Derived m_value;
 
     public:
@@ -111,43 +111,29 @@ namespace argon::detail {
         return errno == 0 && end == cStr + arg.length();
     }
 
-    class ISetValue {
-    protected:
-        bool m_isSet = false;
-        bool m_isImplicitSet = false;
-
-    public:
-        virtual ~ISetValue() = default;
-        [[nodiscard]] auto is_set() const -> bool { return m_isSet; }
-        [[nodiscard]] auto is_implicit_set() const -> bool { return m_isImplicitSet; }
-    private:
-        auto set_value(const std::optional<const std::string_view>& str) -> std::expected<void, std::string> {
-            auto success = set_value_impl(str);
-            if (!success) {
-                return std::unexpected(std::move(success.error()));
-            }
-            m_isSet = true;
-            return {};
-        }
-
-    protected:
-        virtual auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
-
-        template <typename, typename> friend class ImplicitValue;
-        friend class AstAnalyzer;
-    };
-
+    // class ISetValue {
+    // protected:
+    //     bool m_isSet = false;
+    // public:
+    //     virtual ~ISetValue() = default;
+    //     [[nodiscard]] auto is_set() const -> bool { return m_isSet; }
+    // private:
+    //     auto set_value(const std::optional<const std::string_view>& str) -> std::expected<void, std::string> {
+    //         if (auto success = set_value_impl(str); !success) {
+    //             return std::unexpected(std::move(success.error()));
+    //         }
+    //         m_isSet = true;
+    //         return {};
+    //     }
+    //
+    // protected:
+    //     virtual auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
+    //
+    //     friend class AstAnalyzer;
+    // };
 
     template <typename T>
     constexpr bool is_argon_integral_v = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char>;
-
-    template<typename T, typename = void>
-    struct has_stream_extraction : std::false_type {};
-
-    template<typename T>
-    struct has_stream_extraction<T, std::void_t<
-        decltype(std::declval<std::istream&>() >> std::declval<T&>())
-    >> : std::true_type {};
 
     enum class Base {
         Invalid = 0,
@@ -174,10 +160,10 @@ namespace argon::detail {
     }
 
     template <typename T> requires is_argon_integral_v<T>
-    auto parse_integral_type(const std::string_view arg, T& out) -> bool {
-        if (arg.empty()) return false;
+    auto parse_integral_type(const std::string_view arg) -> std::optional<T> {
+        if (arg.empty()) return std::nullopt;
         const auto base = get_base_from_prefix(arg);
-        if (base == Base::Invalid) return false;
+        if (base == Base::Invalid) return std::nullopt;
 
         // Calculate begin offset
         const bool hasSignPrefix = arg[0] == '-' || arg[0] == '+';
@@ -186,7 +172,7 @@ namespace argon::detail {
         if (hasSignPrefix)          { beginOffset += 1; }
 
         const std::string_view digits = arg.substr(beginOffset);
-        if (digits.empty()) return false;
+        if (digits.empty()) return std::nullopt;
 
         std::string noBasePrefix;
         if (hasSignPrefix) {
@@ -197,35 +183,33 @@ namespace argon::detail {
         // Calculate begin and end pointers
         const char *begin = noBasePrefix.data();
         const char *end   = noBasePrefix.data() + noBasePrefix.size();
-        if (begin == end) return false;
+        if (begin == end) return std::nullopt;
 
+        T out;
         auto [ptr, ec] = std::from_chars(begin, end, out, static_cast<int>(base));
-        return ec == std::errc() && ptr == end;
+        if (const bool success = ec == std::errc() && ptr == end; !success) return std::nullopt;
+        return out;
     }
 
-    inline auto parse_bool(const std::string_view arg, bool& out) -> bool {
+    inline auto parse_bool(const std::string_view arg) -> std::optional<bool> {
         std::string lower{arg};
         std::ranges::transform(lower, lower.begin(), ::tolower);
 
         if (lower == "true" || lower == "yes" || lower == "y" ||
             lower == "1" || lower == "on") {
-            out = true;
             return true;
         }
 
         if (lower == "false" || lower == "no" || lower == "n" ||
             lower == "0" || lower == "off") {
-            out = false;
-            return true;
+            return false;
         }
-
-        return false;
+        return std::nullopt;
     }
 
-    inline auto parse_char(const std::string_view arg, char& out) -> bool {
-        if (arg.size() != 1) return false;
-        out = arg[0];
-        return true;
+    inline auto parse_char(const std::string_view arg) -> std::optional<char> {
+        if (arg.size() != 1) return std::nullopt;
+        return arg[0];
     }
 
     template <typename> struct TypeDisplayName     { constexpr static std::string_view value = "unknown"; };
@@ -244,7 +228,7 @@ namespace argon::detail {
     template<> struct TypeDisplayName<char>        { constexpr static std::string_view value = "character"; };
 
     template <typename T>
-    using ConversionFn = std::function<bool(std::string_view, T&)>;
+    using ConversionFn = std::function<std::optional<T>(std::string_view)>;
 
     template <typename Derived, typename T>
     class Converter {
@@ -261,48 +245,41 @@ namespace argon::detail {
             return std::format("expected a {}", TypeDisplayName<T>::value);
         }
     public:
-        auto convert(std::string_view value, T& outValue) -> std::expected<void, std::string> {
-            bool success = false;
+        auto convert(std::string_view value) -> std::expected<T, std::string> {
+            std::optional<T> result;
             // Use custom conversion function for this specific option if supplied
             if (this->m_conversionFn != nullptr) {
-                success = this->m_conversionFn(value, outValue);
+                result = this->m_conversionFn(value);
             }
             // Fallback to generic parsing
             // Parse as a floating point
             else if constexpr (std::is_floating_point_v<T>) {
-                success = parse_floating_point<T>(value, outValue);
+                result = parse_floating_point<T>(value);
             }
             // Parse as argon integral if valid
             else if constexpr (is_argon_integral_v<T>) {
-                success = parse_integral_type<T>(value, outValue);
+                result = parse_integral_type<T>(value);
             }
             // Parse as boolean if T is a boolean
             else if constexpr (std::is_same_v<T, bool>) {
-                 success = parse_bool(value, outValue);
+                 result = parse_bool(value);
             }
             else if constexpr (std::is_same_v<T, char>) {
-                success = parse_char(value, outValue);
+                result = parse_char(value);
             }
             // Parse as a string
             else if constexpr (std::is_same_v<T, std::string>) {
-                outValue = value;
-                success =  true;
-            }
-            // Use stream extraction if custom conversion not supplied and type is not integral
-            else if constexpr (has_stream_extraction<T>::value) {
-                auto iss = std::istringstream(std::string(value));
-                iss >> outValue;
-                success = !iss.fail() && iss.eof();
+                result = value;
             }
             // Should never reach this
             else {
                 throw std::runtime_error("Custom conversion function must be provided for unsupported type");
             }
 
-            if (!success) {
+            if (!result) {
                 return std::unexpected(get_error_msg());
             }
-            return {};
+            return result.value();
         }
 
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) & -> Derived& {
@@ -331,38 +308,19 @@ namespace argon::detail {
     template <typename Derived, typename T>
     class SingleValueStorage {
     protected:
-        T m_valueStorage;
+        std::optional<T> m_valueStorage;
+        std::optional<T> m_defaultValue;
     public:
-        auto get_value() const -> T { return this->m_valueStorage; }
+        auto get_value() const -> std::optional<T> { return m_valueStorage; }
+        auto get_default_value() const -> std::optional<T> { return m_defaultValue; }
 
         auto with_default(T defaultValue) & -> Derived& {
-            m_valueStorage = defaultValue;
+            m_defaultValue = defaultValue;
             return static_cast<Derived&>(*this);
         }
 
         auto with_default(T defaultValue) && -> Derived&& {
-            m_valueStorage = defaultValue;
-            return static_cast<Derived&&>(*this);
-        }
-    };
-
-    template <typename Derived, typename T>
-    class ImplicitValue {
-    protected:
-        T m_implicitValue;
-
-    public:
-        auto with_implicit(T implicitValue) & -> Derived& {
-            auto& derived = static_cast<Derived&>(*this);
-            derived.m_isImplicitSet = true;
-            m_implicitValue = implicitValue;
-            return static_cast<Derived&>(*this);
-        }
-
-        auto with_implicit(T implicitValue) && -> Derived&& {
-            auto& derived = static_cast<Derived&>(*this);
-            derived.m_isImplicitSet = true;
-            m_implicitValue = implicitValue;
+            m_defaultValue = defaultValue;
             return static_cast<Derived&&>(*this);
         }
     };
@@ -370,54 +328,69 @@ namespace argon::detail {
 
 
 namespace argon::detail {
-    class FlagBase : public ISetValue {
+    class FlagBase {
+        friend class AstAnalyzer;
+
     protected:
         std::string m_flag;
         std::vector<std::string> m_aliases;
+
+        [[nodiscard]] virtual auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
     public:
         FlagBase() = default;
         explicit FlagBase(const std::string_view flag) : m_flag(flag) {};
-        ~FlagBase() override = default;
+        virtual ~FlagBase() = default;
 
         [[nodiscard]] auto get_flag() const -> const std::string& { return m_flag; }
         [[nodiscard]] auto get_aliases() const -> const std::vector<std::string>& { return m_aliases; }
+
+        [[nodiscard]] virtual auto is_set() const -> bool = 0;
+        [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
     };
 
-    class PositionalBase : public ISetValue {
+    class PositionalBase {
+        friend class AstAnalyzer;
+
     protected:
         std::optional<std::string> m_name;
+
+        [[nodiscard]] virtual auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
     public:
         PositionalBase() = default;
-        explicit PositionalBase(const std::string_view name) : m_name(name) {};
+        explicit PositionalBase(const std::string_view name) : m_name(name) {}
+        virtual ~PositionalBase() = default;
 
         [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
+        [[nodiscard]] virtual auto is_set() const -> bool = 0;
     };
 } // namespace argon::detail
 
 
 namespace argon {
     template <typename T>
-    class Flag
-        : public detail::FlagBase,
-          public detail::SingleValueStorage<Flag<T>, T>,
-          public detail::Converter<Flag<T>, T>,
-          public detail::ImplicitValue<Flag<T>, T> {
-    protected:
-        auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
+    class Flag final
+            : public detail::FlagBase,
+              public detail::SingleValueStorage<Flag<T>, T>,
+              public detail::Converter<Flag<T>, T> {
+        std::optional<T> m_implicitValue;
+
+        auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
             if (str == std::nullopt) {
-                if (!this->is_implicit_set()) {
+                if (!is_implicit_set()) {
                     return std::unexpected(
                         std::format("Flag '{}' does not have an implicit value and no value was given", this->get_flag()));
                 }
-                this->m_valueStorage = this->m_implicitValue;
+                this->m_valueStorage = m_implicitValue;
                 return {};
             }
-            const auto conversionSuccess =  this->convert(str.value(), this->m_valueStorage);
-            if (!conversionSuccess) {
+
+            auto result = this->convert(str.value());
+            if (!result.has_value()) {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for flag '{}': {}",
-                    str.value(), this->get_flag(), conversionSuccess.error()));
+                    str.value(), this->get_flag(), result.error()));
             }
+            this->m_valueStorage = result.value();
             return {};
         }
 
@@ -429,36 +402,58 @@ namespace argon {
             return *this;
         }
 
-        auto with_alias(std::string_view alias) && -> Flag {
+        auto with_alias(std::string_view alias) && -> Flag&& {
             this->m_aliases.emplace_back(alias);
             return std::move(*this);
+        }
+
+        auto with_implicit(T implicitValue) & -> Flag& {
+            m_implicitValue = implicitValue;
+            return std::move(*this);
+        }
+
+        auto with_implicit(T implicitValue) && -> Flag&& {
+            m_implicitValue = implicitValue;
+            return std::move(*this);
+        }
+
+        [[nodiscard]] auto is_set() const -> bool override {
+            return this->m_valueStorage.has_value();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
         }
     };
 
     template <typename T>
-    class Positional
-        : public detail::PositionalBase,
-          public detail::SingleValueStorage<Positional<T>, T>,
-          public detail::Converter<Positional<T>, T> {
-    protected:
-        auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
-            const auto conversionSuccess =  this->convert(str.value(), this->m_valueStorage);
-            if (!conversionSuccess) {
+    class Positional final
+            : public detail::PositionalBase,
+              public detail::SingleValueStorage<Positional<T>, T>,
+              public detail::Converter<Positional<T>, T> {
+        auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
+            auto result = this->convert(str.value());
+            if (!result) {
                 if (const auto name = this->get_name(); name.has_value()) {
                     return std::unexpected(std::format(
                         "Invalid value '{}' for '{}': {}",
-                        str.value(), name.value(), conversionSuccess.error()));
+                        str.value(), name.value(), result.error()));
                 }
                 return std::unexpected(std::format(
                     "Invalid value '{}' for positional argument: {}",
-                    str.value(), conversionSuccess.error()));
+                    str.value(), result.error()));
             }
+            this->m_valueStorage = result.value();
             return {};
         }
 
     public:
         Positional() = default;
         explicit Positional(const std::string_view name) : PositionalBase(name) {}
+
+        [[nodiscard]] auto is_set() const -> bool override {
+            return this->m_valueStorage.has_value();
+        }
     };
  } // namespace argon::detail
 
@@ -743,11 +738,11 @@ namespace argon::detail {
                         optToken->image, optToken->argvPosition));
                 }
                 if (context.contains_flag(optToken->image)) {
-                    auto success = parse_flag(tokenizer, context, astContext);
-                    if (!success) return std::unexpected(std::move(success.error()));
+                    if (auto success = parse_flag(tokenizer, context, astContext); !success)
+                        return std::unexpected(std::move(success.error()));
                 } else {
-                    auto success = parse_positional(tokenizer, context, astContext);
-                    if (!success) return std::unexpected(std::move(success.error()));
+                    if (auto success = parse_positional(tokenizer, context, astContext); !success)
+                        return std::unexpected(std::move(success.error()));
                 }
             }
             return astContext;
@@ -828,8 +823,7 @@ namespace argon::detail {
             for (size_t i = 0; i < ast.positionals.size() && i < context.get_num_positionals(); ++i) {
                 const auto opt = context.get_positional(i);
                 if (!opt) continue;
-                auto success = opt->set_value(ast.positionals[i].value.value);
-                if (!success) {
+                if (auto success = opt->set_value(ast.positionals[i].value.value); !success) {
                     errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
                 }
             }
@@ -878,7 +872,7 @@ namespace argon {
 
     public:
         template <typename T>
-        auto get_flag(const FlagHandle<T>& handle) const -> T {
+        auto get(const FlagHandle<T>& handle) const -> std::optional<T> {
             const auto base = get_flag_base(handle.get_id());
             const auto value = dynamic_cast<const Flag<T>*>(base);
             if (!value) {
@@ -886,11 +880,13 @@ namespace argon {
                                          "Flag ID and templated type do not match");
                 std::terminate();
             }
-            return value->get_value();
+            const auto& storedValue = value->get_value();
+            const auto& defaultValue = value->get_default_value();
+            return storedValue ? storedValue : defaultValue;
         }
 
         template <typename T>
-        auto get_positional(const PositionalHandle<T>& handle) const -> T {
+        auto get(const PositionalHandle<T>& handle) const -> std::optional<T> {
             try {
                 const auto& base = m_positionals.at(handle.get_id());
                 const auto value = dynamic_cast<const Positional<T>*>(base->get());
@@ -899,7 +895,9 @@ namespace argon {
                                              "Flag ID and templated type do not match");
                     std::terminate();
                 }
-                return value->get_value();
+                const auto& storedValue = value->get_value();
+                const auto& defaultValue = value->get_default_value();
+                return storedValue ? storedValue : defaultValue;
             } catch (const std::out_of_range&) {
                 std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
                 std::terminate();
@@ -935,8 +933,7 @@ namespace argon::detail {
             std::vector<std::string> errors;
 
             for (const auto& id : constraints.m_requiredFlags) {
-                const auto base = results.get_flag_base(id);
-                if (!base->is_set()) {
+                if (const auto base = results.get_flag_base(id); !base->is_set()) {
                     errors.emplace_back(std::format("Flag '{}' is required and must be set", base->get_flag()));
                 }
             }
@@ -979,12 +976,14 @@ namespace argon {
             auto ast = detail::AstBuilder::build(argc, argv, root.context);
             if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
 
-            auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context);
-            if (!analysisSuccess) return std::unexpected(std::move(analysisSuccess.error()));
+            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context); !analysisSuccess) {
+                return std::unexpected(std::move(analysisSuccess.error()));
+            }
 
             Results results{root.context};
-            auto constraintSuccess = detail::ConstraintValidator::validate(constraints, results);
-            if (!constraintSuccess) return std::unexpected(std::move(constraintSuccess.error()));
+            if (auto constraintSuccess = detail::ConstraintValidator::validate(constraints, results); !constraintSuccess) {
+                return std::unexpected(std::move(constraintSuccess.error()));
+            }
 
             return results;
         }
