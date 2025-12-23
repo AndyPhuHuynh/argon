@@ -122,16 +122,16 @@ namespace argon::detail {
         [[nodiscard]] auto is_implicit_set() const -> bool { return m_isImplicitSet; }
     private:
         auto set_value(const std::optional<const std::string_view>& str) -> std::expected<void, std::string> {
-            if (set_value_impl(str)) {
-                m_isSet = true;
-                return {};
+            auto success = set_value_impl(str);
+            if (!success) {
+                return std::unexpected(std::move(success.error()));
             }
-            // TODO: Error message here
-            return std::unexpected("Todo");
+            m_isSet = true;
+            return {};
         }
 
     protected:
-        virtual auto set_value_impl(std::optional<const std::string_view> str) -> bool = 0;
+        virtual auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
 
         template <typename, typename> friend class ImplicitValue;
         friend class AstAnalyzer;
@@ -139,7 +139,7 @@ namespace argon::detail {
 
 
     template <typename T>
-    constexpr bool is_non_bool_integral_v = std::is_integral_v<T> && !std::is_same_v<T, bool>;
+    constexpr bool is_argon_integral_v = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char>;
 
     template<typename T, typename = void>
     struct has_stream_extraction : std::false_type {};
@@ -173,7 +173,7 @@ namespace argon::detail {
         return Base::Invalid;
     }
 
-    template <typename T> requires std::is_integral_v<T>
+    template <typename T> requires is_argon_integral_v<T>
     auto parse_integral_type(const std::string_view arg, T& out) -> bool {
         if (arg.empty()) return false;
         const auto base = get_base_from_prefix(arg);
@@ -222,59 +222,109 @@ namespace argon::detail {
         return false;
     }
 
+    inline auto parse_char(const std::string_view arg, char& out) -> bool {
+        if (arg.size() != 1) return false;
+        out = arg[0];
+        return true;
+    }
+
+    template <typename> struct TypeDisplayName     { constexpr static std::string_view value = "unknown"; };
+    template<> struct TypeDisplayName<int8_t>      { constexpr static std::string_view value = "signed 8-bit integer"; };
+    template<> struct TypeDisplayName<uint8_t>     { constexpr static std::string_view value = "unsigned 8-bit integer"; };
+    template<> struct TypeDisplayName<int16_t>     { constexpr static std::string_view value = "signed 16-bit integer"; };
+    template<> struct TypeDisplayName<uint16_t>    { constexpr static std::string_view value = "unsigned 16-bit integer"; };
+    template<> struct TypeDisplayName<int32_t>     { constexpr static std::string_view value = "signed 32-bit integer"; };
+    template<> struct TypeDisplayName<uint32_t>    { constexpr static std::string_view value = "unsigned 32-bit integer"; };
+    template<> struct TypeDisplayName<int64_t>     { constexpr static std::string_view value = "signed 64-bit integer"; };
+    template<> struct TypeDisplayName<uint64_t>    { constexpr static std::string_view value = "unsigned 64-bit integer"; };
+    template<> struct TypeDisplayName<float>       { constexpr static std::string_view value = "floating-point number"; };
+    template<> struct TypeDisplayName<double>      { constexpr static std::string_view value = "floating-point number"; };
+    template<> struct TypeDisplayName<long double> { constexpr static std::string_view value = "floating-point number"; };
+    template<> struct TypeDisplayName<bool>        { constexpr static std::string_view value = "boolean"; };
+    template<> struct TypeDisplayName<char>        { constexpr static std::string_view value = "character"; };
 
     template <typename T>
-    using ConversionFn = std::function<bool(std::string_view, T*)>;
+    using ConversionFn = std::function<bool(std::string_view, T&)>;
 
     template <typename Derived, typename T>
     class Converter {
-    protected:
         ConversionFn<T> m_conversionFn = nullptr;
+        std::string m_conversionErrorMsg;
 
+        auto get_error_msg() -> std::string {
+            if (!m_conversionErrorMsg.empty()) {
+                return m_conversionErrorMsg;
+            }
+            if constexpr (is_argon_integral_v<T> && std::is_unsigned_v<T>) {
+                return std::format("expected an {}", TypeDisplayName<T>::value);
+            }
+            return std::format("expected a {}", TypeDisplayName<T>::value);
+        }
     public:
-        auto convert(std::string_view value, T& outValue) -> bool {
+        auto convert(std::string_view value, T& outValue) -> std::expected<void, std::string> {
+            bool success = false;
             // Use custom conversion function for this specific option if supplied
             if (this->m_conversionFn != nullptr) {
-                return this->m_conversionFn(value, &outValue);
+                success = this->m_conversionFn(value, outValue);
             }
             // Fallback to generic parsing
             // Parse as a floating point
-            if constexpr (std::is_floating_point_v<T>) {
-                return parse_floating_point<T>(value, outValue);
+            else if constexpr (std::is_floating_point_v<T>) {
+                success = parse_floating_point<T>(value, outValue);
             }
-            // Parse as non-bool integral if valid
-            else if constexpr (is_non_bool_integral_v<T>) {
-                return parse_integral_type<T>(value, outValue);
+            // Parse as argon integral if valid
+            else if constexpr (is_argon_integral_v<T>) {
+                success = parse_integral_type<T>(value, outValue);
             }
             // Parse as boolean if T is a boolean
             else if constexpr (std::is_same_v<T, bool>) {
-                 return parse_bool(value, outValue);
+                 success = parse_bool(value, outValue);
+            }
+            else if constexpr (std::is_same_v<T, char>) {
+                success = parse_char(value, outValue);
             }
             // Parse as a string
             else if constexpr (std::is_same_v<T, std::string>) {
                 outValue = value;
-                return true;
+                success =  true;
             }
             // Use stream extraction if custom conversion not supplied and type is not integral
             else if constexpr (has_stream_extraction<T>::value) {
                 auto iss = std::istringstream(std::string(value));
                 iss >> outValue;
-                return !iss.fail() && iss.eof();
+                success = !iss.fail() && iss.eof();
             }
             // Should never reach this
             else {
                 throw std::runtime_error("Custom conversion function must be provided for unsupported type");
             }
+
+            if (!success) {
+                return std::unexpected(get_error_msg());
+            }
+            return {};
         }
 
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) & -> Derived& {
             m_conversionFn = conversionFn;
-            return *this;
+            return static_cast<Derived&>(*this);
         }
 
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) && -> Derived&& {
             m_conversionFn = conversionFn;
-            return std::move(*this);
+            return static_cast<Derived&&>(*this);
+        }
+
+        auto with_conversion_fn(const ConversionFn<T>& conversionFn, const std::string_view errorMsg) & -> Derived& {
+            m_conversionFn = conversionFn;
+            m_conversionErrorMsg = errorMsg;
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_conversion_fn(const ConversionFn<T>& conversionFn, const std::string_view errorMsg) && -> Derived&& {
+            m_conversionFn = conversionFn;
+            m_conversionErrorMsg = errorMsg;
+            return static_cast<Derived&&>(*this);
         }
     };
 
@@ -353,15 +403,22 @@ namespace argon {
           public detail::Converter<Flag<T>, T>,
           public detail::ImplicitValue<Flag<T>, T> {
     protected:
-        auto set_value_impl(std::optional<const std::string_view> str) -> bool override {
+        auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
             if (str == std::nullopt) {
                 if (!this->is_implicit_set()) {
-                    return false;
+                    return std::unexpected(
+                        std::format("Flag '{}' does not have an implicit value and no value was given", this->get_flag()));
                 }
                 this->m_valueStorage = this->m_implicitValue;
-                return true;
+                return {};
             }
-            return this->convert(str.value(), this->m_valueStorage);
+            const auto conversionSuccess =  this->convert(str.value(), this->m_valueStorage);
+            if (!conversionSuccess) {
+                return std::unexpected(std::format(
+                    "Invalid value '{}' for flag '{}': {}",
+                    str.value(), this->get_flag(), conversionSuccess.error()));
+            }
+            return {};
         }
 
     public:
@@ -384,8 +441,19 @@ namespace argon {
           public detail::SingleValueStorage<Positional<T>, T>,
           public detail::Converter<Positional<T>, T> {
     protected:
-        auto set_value_impl(std::optional<const std::string_view> str) -> bool override {
-            return this->convert(str.value(), this->m_valueStorage);
+        auto set_value_impl(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
+            const auto conversionSuccess =  this->convert(str.value(), this->m_valueStorage);
+            if (!conversionSuccess) {
+                if (const auto name = this->get_name(); name.has_value()) {
+                    return std::unexpected(std::format(
+                        "Invalid value '{}' for '{}': {}",
+                        str.value(), name.value(), conversionSuccess.error()));
+                }
+                return std::unexpected(std::format(
+                    "Invalid value '{}' for positional argument: {}",
+                    str.value(), conversionSuccess.error()));
+            }
+            return {};
         }
 
     public:
@@ -703,15 +771,7 @@ namespace argon::detail {
         std::string name;
     };
 
-    struct AnalysisError_FlagConversion {
-        std::string name;
-        std::optional<AstValue> value;
-        std::string errorMsg;
-    };
-
-    struct AnalysisError_PositionalConversion {
-        std::optional<std::string> name;
-        AstValue value;
+    struct AnalysisError_Conversion {
         std::string errorMsg;
     };
 
@@ -722,8 +782,7 @@ namespace argon::detail {
 
     using AnalysisError = std::variant<
         AnalysisError_UnknownFlag,
-        AnalysisError_FlagConversion,
-        AnalysisError_PositionalConversion,
+        AnalysisError_Conversion,
         AnalysisError_TooManyPositionals
     >;
 
@@ -732,17 +791,8 @@ namespace argon::detail {
             if constexpr (std::is_same_v<T, AnalysisError_UnknownFlag>) {
                 return std::format("Unknown flag '{}'", err.name);
             }
-            else if constexpr (std::is_same_v<T, AnalysisError_FlagConversion>) {
-                if (err.value) {
-                    return std::format("Invalid value '{}' for flag '{}'", err.value.value().value, err.name);
-                }
-                return std::format("Flag '{}' does not have an implicit value and no value was given", err.name);
-            }
-            else if constexpr (std::is_same_v<T, AnalysisError_PositionalConversion>) {
-                if (err.name) {
-                    return std::format("Invalid value '{}' for positional argument '{}'", err.value.value, err.name.value());
-                }
-                return std::format("Invalid value '{}' for positional argument", err.value.value);
+            else if constexpr (std::is_same_v<T, AnalysisError_Conversion>) {
+                return err.errorMsg;
             }
             else if constexpr (std::is_same_v<T, AnalysisError_TooManyPositionals>) {
                 return std::format("Max of {} positional arguments, however {} encountered", err.max, err.actual);
@@ -771,11 +821,7 @@ namespace argon::detail {
                     std::optional<std::string_view>{value->value} :
                     std::optional<std::string_view>{std::nullopt});
                 if (!success) {
-                    errors.emplace_back(AnalysisError_FlagConversion{
-                        .name = name,
-                        .value = value,
-                        .errorMsg = std::move(success.error())
-                    });
+                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
                 }
             }
 
@@ -784,11 +830,7 @@ namespace argon::detail {
                 if (!opt) continue;
                 auto success = opt->set_value(ast.positionals[i].value.value);
                 if (!success) {
-                    errors.emplace_back(AnalysisError_PositionalConversion{
-                        .name = opt->get_name(),
-                        .value = ast.positionals[i].value,
-                        .errorMsg = std::move(success.error())
-                    });
+                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
                 }
             }
             if (ast.positionals.size() > context.get_num_positionals()) {
@@ -825,7 +867,7 @@ namespace argon {
             }
         }
 
-        auto get_flag_base(const detail::UniqueId id) const -> const detail::FlagBase * {
+        [[nodiscard]] auto get_flag_base(const detail::UniqueId id) const -> const detail::FlagBase * {
             try {
                 return m_flags.at(id)->get();
             } catch (const std::out_of_range&) {
