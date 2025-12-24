@@ -9,6 +9,9 @@ int main(const int argc, const char *argv[]) {
     auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s")
         .with_default("default value!")
         .with_implicit("implicit value!"));
+    auto multi_char_handle = cmd.add_multi_flag(argon::MultiFlag<char>("--chars").with_alias("-c")
+        .with_default({'x', 'y', 'z'})
+        .with_implicit({'a', 'b', 'c'}));
     auto pos_handle   = cmd.add_positional(argon::Positional<std::string>());
 
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
@@ -35,12 +38,26 @@ int main(const int argc, const char *argv[]) {
     std::optional<int> hello = results->get(hello_handle);
     std::optional<int> world = results->get(world_handle);
     std::optional<int> bye   = results->get(bye_handle);
+    std::vector<char> chars  = results->get(multi_char_handle);
     std::optional<std::string> str = results->get(str_handle);
     std::optional<std::string> pos = results->get(pos_handle);
+
+    if (!results->is_specified(str_handle)) {
+        std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
+    }
+    if (!results->is_specified(multi_char_handle)) {
+        std::cout << "Flag '--chars' was not provided. Resorting to default value of {'x', 'y', 'z'}\n";
+    }
 
     std::cout << "Hello: " << (hello ? hello.value() : -1)     << "\n";
     std::cout << "World: " << (world ? world.value() : -1)     << "\n";
     std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
     std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
     std::cout << "Pos: "   << (pos ? pos.value() : "no value") << "\n";
+
+    std::cout << "Chars: ";
+    for (const char c : chars) {
+        std::cout << c << " ";
+    }
+    std::cout << "\n";
 }
