@@ -7,10 +7,9 @@
 #include <expected>
 #include <format>
 #include <functional>
-#include <iostream>
 #include <memory>
 #include <ranges>
-#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -252,7 +251,7 @@ namespace argon::detail {
             }
             // Should never reach this
             else {
-                throw std::runtime_error("Custom conversion function must be provided for unsupported type");
+                throw std::logic_error("Custom conversion function must be provided for unsupported type");
             }
 
             if (!result) {
@@ -383,6 +382,23 @@ namespace argon::detail {
         [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
     };
+
+    class MultiPositionalBase {
+        friend class AstAnalyzer;
+
+    protected:
+        std::optional<std::string> m_name;
+
+        [[nodiscard]] virtual auto set_value(std::span<const std::string_view> values)
+            -> std::expected<void, std::vector<std::string>> = 0;
+    public:
+        MultiPositionalBase() = default;
+        explicit MultiPositionalBase(const std::string_view name) : m_name(name) {}
+        virtual ~MultiPositionalBase() = default;
+
+        [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
+        [[nodiscard]] virtual auto is_set() const -> bool = 0;
+    };
 } // namespace argon::detail
 
 
@@ -394,7 +410,7 @@ namespace argon {
               public detail::Converter<Flag<T>, T> {
         std::optional<T> m_implicitValue;
 
-        auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
+        auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
             if (str == std::nullopt) {
                 if (!is_implicit_set()) {
                     return std::unexpected(
@@ -541,6 +557,44 @@ namespace argon {
             return this->m_valueStorage.has_value();
         }
     };
+
+    template <typename T>
+    class MultiPositional final
+            : public detail::MultiPositionalBase,
+              public detail::VectorValueStorage<MultiPositional<T>, T>,
+              public detail::Converter<MultiPositional<T>, T> {
+        auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>>  override {
+            std::vector<std::string> errors;
+            for (const auto& value : values) {
+                auto result = this->convert(value);
+                if (!result.has_value()) {
+                    if (const auto name = this->get_name(); name.has_value()) {
+                        errors.emplace_back(std::format(
+                            "Invalid value '{}' for '{}': {}",
+                            result.value(), name.value(), result.error()));
+                    } else {
+                        errors.emplace_back(std::format(
+                            "Invalid value '{}' for multi-positional argument",
+                            result.value(), result.error()));
+                    }
+                    continue;
+                }
+                this->m_valueStorage.emplace_back(std::move(result.value()));
+            }
+            if (!errors.empty()) {
+                return std::unexpected(std::move(errors));
+            }
+            return {};
+        }
+
+    public:
+        MultiPositional() = default;
+        explicit MultiPositional(const std::string_view name) : MultiPositionalBase(name) {}
+
+        [[nodiscard]] auto is_set() const -> bool override {
+            return !this->m_valueStorage.empty();
+        }
+    };
  } // namespace argon::detail
 
 
@@ -574,6 +628,7 @@ namespace argon {
     template <typename T> using FlagHandle = Handle<T, detail::FlagBase>;
     template <typename T> using MultiFlagHandle = Handle<T, detail::MultiFlagBase>;
     template <typename T> using PositionalHandle = Handle<T, detail::PositionalBase>;
+    template <typename T> using MultiPositionalHandle = Handle<T, detail::MultiPositionalBase>;
 } // namespace argon
 
 
@@ -590,6 +645,7 @@ namespace argon::detail {
         std::unordered_map<UniqueId, Polymorphic<MultiFlagBase>> m_multiFlags;
         std::unordered_map<UniqueId, Polymorphic<PositionalBase>> m_positionals;
         std::vector<UniqueId> m_positionalOrder;
+        std::optional<std::pair<UniqueId, Polymorphic<MultiPositionalBase>>> m_multiPositional;
 
     public:
         template <typename T>
@@ -614,12 +670,30 @@ namespace argon::detail {
             return handle;
         }
 
+        template <typename T>
+        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<T> {
+            if (contains_multi_positional()) {
+                throw std::logic_error("only one MultiPositional may be specified per context");
+            }
+
+            MultiPositionalHandle<T> handle{};
+            m_multiPositional = std::pair{
+                handle.get_id(),
+                detail::make_polymorphic<MultiPositionalBase>(std::move(positional))
+            };
+            return handle;
+        }
+
         [[nodiscard]] auto contains_flag(const std::string_view flagName) const -> bool {
             return get_flag(flagName) != nullptr;
         }
 
         [[nodiscard]] auto contains_multi_flag(const std::string_view flagName) const -> bool {
             return get_multi_flag(flagName) != nullptr;
+        }
+
+        [[nodiscard]] auto contains_multi_positional() const -> bool {
+            return m_multiPositional.has_value();
         }
 
         [[nodiscard]] auto get_flag(const std::string_view flagName) -> FlagBase * {
@@ -677,6 +751,21 @@ namespace argon::detail {
 
         [[nodiscard]] auto get_positionals() const -> const std::unordered_map<UniqueId, Polymorphic<PositionalBase>>& {
             return m_positionals;
+        }
+
+        [[nodiscard]] auto get_multi_positional_with_id() const
+            -> const std::optional<std::pair<UniqueId, Polymorphic<MultiPositionalBase>>>& {
+            return m_multiPositional;
+        }
+
+        [[nodiscard]] auto get_multi_positional_ptr() -> MultiPositionalBase * {
+            if (!contains_multi_positional()) return nullptr;
+            return m_multiPositional->second.get();
+        }
+
+        [[nodiscard]] auto get_multi_positional_ptr() const -> const MultiPositionalBase * {
+            if (!contains_multi_positional()) return nullptr;
+            return m_multiPositional->second.get();
         }
     };
 } // namespace argon::detail
@@ -763,6 +852,10 @@ namespace argon::detail {
         AstValue value;
     };
 
+    struct MultiPositionalAst {
+        std::vector<AstValue> values;
+    };
+
     struct GroupAst {
         std::string name;
         std::unique_ptr<AstContext> context;
@@ -772,6 +865,7 @@ namespace argon::detail {
         std::vector<FlagAst> flags;
         std::vector<MultiFlagAst> multiFlags;
         std::vector<PositionalAst> positionals;
+        MultiPositionalAst multiPositional;
         std::vector<GroupAst> groups;
     };
 
@@ -781,6 +875,10 @@ namespace argon::detail {
 
     inline auto looks_like_flag(const Token& token) -> bool {
         return token.kind == TokenKind::STRING && looks_like_flag(token.image);
+    }
+
+    inline auto optional_token_is_not_value(const std::optional<Token>& flagValue) -> bool {
+        return !flagValue || looks_like_flag(flagValue.value()) || flagValue->kind != TokenKind::STRING;
     }
 
     class AstBuilder {
@@ -806,7 +904,7 @@ namespace argon::detail {
             const auto flagValue = tokenizer.peek_token();
             const auto flag = context.get_flag(flagName->image);
 
-            if (!flagValue || looks_like_flag(flagValue.value())) {
+            if (optional_token_is_not_value(flagValue)) {
                 if (flag->is_implicit_set()) {
                     FlagAst flagAst{
                         .name = flagName->image,
@@ -821,10 +919,6 @@ namespace argon::detail {
 
             if (!flagValue) {
                 return std::unexpected(std::format("Expected flag value, however reached end of arguments"));
-            }
-            if (flagValue->kind != TokenKind::STRING) {
-                return std::unexpected(
-                    std::format(R"(Unexpected token '{}' while parsing value for flag '{}')", flagValue->image, flagName->image));
             }
             tokenizer.next_token();
 
@@ -861,7 +955,7 @@ namespace argon::detail {
             MultiFlagAst flagAst{ .name = flagName->image };
             do {
                 const auto value = tokenizer.peek_token();
-                if (!value || value->kind != TokenKind::STRING || looks_like_flag(value->image)) {
+                if (optional_token_is_not_value(value)) {
                     break;
                 }
                 flagAst.values.emplace_back(AstValue {
@@ -887,11 +981,25 @@ namespace argon::detail {
         ) -> std::expected<void, std::string> {
             const auto value = tokenizer.peek_token();
             if (!value) {
-                return std::unexpected(std::format("Expected flag name, however reached end of arguments"));
+                return std::unexpected(std::format("Expected positional argument, however reached end of arguments"));
             }
+
+            PositionalAst positionalAst{ .value = AstValue {
+                .value = value->image,
+                .argvPosition = value->argvPosition
+            }};
+
             if (astContext.positionals.size() >= context.get_num_positionals()) {
+                if (context.contains_multi_positional()) {
+                    tokenizer.next_token();
+                    astContext.multiPositional.values.emplace_back(AstValue {
+                        .value = value->image,
+                        .argvPosition = value->argvPosition
+                    });
+                    return {};
+                }
                 return std::unexpected(std::format(
-                        "Unexpected token '{}' found at position {}",
+                        "Unexpected token '{}' found at position {}, too many positional arguments specified",
                         value->image, value->argvPosition));
             }
             tokenizer.next_token();
@@ -899,7 +1007,7 @@ namespace argon::detail {
             astContext.positionals.emplace_back(PositionalAst{ .value = AstValue {
                 .value = value->image,
                 .argvPosition = value->argvPosition
-            } });
+            }});
             return {};
         }
 
@@ -910,6 +1018,14 @@ namespace argon::detail {
                     return std::unexpected(std::format(
                         "Unexpected token '{}' found at position {}",
                         optToken->image, optToken->argvPosition));
+                }
+                if (optToken->kind == TokenKind::DOUBLE_DASH) {
+                    tokenizer.next_token();
+                    while (tokenizer.peek_token()) {
+                        if (auto success = parse_positional(tokenizer, context, astContext); !success)
+                            return std::unexpected(std::move(success.error()));
+                    }
+                    return astContext;
                 }
                 if (context.contains_flag(optToken->image)) {
                     if (auto success = parse_flag(tokenizer, context, astContext); !success)
@@ -1038,9 +1154,28 @@ namespace argon::detail {
                 });
             }
 
+            if (const auto multiPos = context.get_multi_positional_ptr(); multiPos) {
+                const auto multiPositionalValues =
+                ast.multiPositional.values
+                | std::views::transform([](const AstValue& value) -> std::string_view
+                    { return std::string_view(value.value); })
+                | std::ranges::to<std::vector<std::string_view>>();
+
+                if (auto success = multiPos->set_value(multiPositionalValues); !success) {
+                    const auto conversionErrors =
+                        success.error()
+                        | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
+                            return { .errorMsg = std::move(error) };
+                        })
+                        | std::ranges::to<std::vector<AnalysisError_Conversion>>();
+
+                    errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
+                }
+            }
+
             if (errors.empty()) return {};
             return std::unexpected(std::views::transform(errors, [](const AnalysisError& error) -> std::string
-                { return format_analysis_error(error); })
+                    { return format_analysis_error(error); })
                 | std::ranges::to<std::vector>());
         }
     };
@@ -1053,6 +1188,7 @@ namespace argon {
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> m_multiFlags;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> m_multiPositionals;
 
         friend class detail::ConstraintValidator;
         friend class Cli;
@@ -1067,24 +1203,25 @@ namespace argon {
             for (const auto& [id, positional] : context.get_positionals()) {
                 m_positionals.emplace(id, &positional);
             }
+            if (const auto& multiPos = context.get_multi_positional_with_id(); multiPos.has_value()) {
+                m_multiPositionals.emplace(multiPos->first, &multiPos->second);
+            }
         }
 
         [[nodiscard]] auto get_flag_base(const detail::UniqueId id) const -> const detail::FlagBase * {
-            try {
-                return m_flags.at(id)->get();
-            } catch (const std::out_of_range&) {
-                std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
-                std::terminate();
+            const auto it = m_flags.find(id);
+            if (it == m_flags.end()) {
+                throw std::invalid_argument("Invalid flag ID: no flag with this ID exists");
             }
+            return it->second->get();
         }
 
         [[nodiscard]] auto get_multi_flag_base(const detail::UniqueId id) const -> const detail::MultiFlagBase * {
-            try {
-                return m_multiFlags.at(id)->get();
-            } catch (const std::out_of_range&) {
-                std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
-                std::terminate();
+            const auto it = m_multiFlags.find(id);
+            if (it == m_multiFlags.end()) {
+                throw std::invalid_argument("Invalid multi-flag ID: no multi-flag with this ID exists");
             }
+            return it->second->get();
         }
 
     public:
@@ -1100,15 +1237,12 @@ namespace argon {
             return base->is_set();
         }
 
-
         template <typename T>
         [[nodiscard]] auto get(const FlagHandle<T>& handle) const -> std::optional<T> {
             const auto base = get_flag_base(handle.get_id());
             const auto value = dynamic_cast<const Flag<T>*>(base);
             if (!value) {
-                std::cerr << std::format("Invalid flag id -- internal library error. "
-                                         "Flag ID and templated type do not match");
-                std::terminate();
+                throw std::logic_error("Internal error: flag type mismatch");
             }
             const auto& storedValue = value->get_value();
             const auto& defaultValue = value->get_default_value();
@@ -1126,9 +1260,7 @@ namespace argon {
             const auto base = get_multi_flag_base(handle.get_id());
             const auto value = dynamic_cast<const MultiFlag<T>*>(base);
             if (!value) {
-                std::cerr << std::format("Invalid multi flag id -- internal library error. "
-                                         "Flag ID and templated type do not match");
-                std::terminate();
+                throw std::logic_error("Internal error: multi-flag type mismatch");
             }
             const auto& storedValue = value->get_value();
             const auto& defaultValue = value->get_default_value();
@@ -1143,21 +1275,40 @@ namespace argon {
 
         template <typename T>
         [[nodiscard]] auto get(const PositionalHandle<T>& handle) const -> std::optional<T> {
-            try {
-                const auto& base = m_positionals.at(handle.get_id());
-                const auto value = dynamic_cast<const Positional<T>*>(base->get());
-                if (!value) {
-                    std::cerr << std::format("Invalid flag id -- internal library error. "
-                                             "Flag ID and templated type do not match");
-                    std::terminate();
-                }
-                const auto& storedValue = value->get_value();
-                const auto& defaultValue = value->get_default_value();
-                return storedValue ? storedValue : defaultValue;
-            } catch (const std::out_of_range&) {
-                std::cerr << std::format("Invalid flag id -- check if FlagHandles were handled correctly");
-                std::terminate();
+            const auto it = m_positionals.find(handle.get_id());
+            if (it == m_positionals.end()) {
+                throw std::invalid_argument("Invalid positional handle: no positional handle with this ID exists");
             }
+            const auto& base = it->second;
+            const auto value = dynamic_cast<const Positional<T>*>(base->get());
+            if (!value) {
+                throw std::logic_error("Internal error: positional type mismatch");
+            }
+            const auto& storedValue = value->get_value();
+            const auto& defaultValue = value->get_default_value();
+            return storedValue ? storedValue : defaultValue;
+        }
+
+        template <typename T>
+        [[nodiscard]] auto get(const MultiPositionalHandle<T>& handle) const -> std::vector<T> {
+            const auto it = m_multiPositionals.find(handle.get_id());
+            if (it == m_multiPositionals.end()) {
+                throw std::invalid_argument("Invalid multi-positional handle: no multi-positional handle with this ID exists");
+            }
+            const auto& base = it->second;
+            const auto value = dynamic_cast<const MultiPositional<T>*>(base->get());
+            if (!value) {
+                throw std::logic_error("Internal error: multi-positional type mismatch");
+            }
+            const auto& storedValue = value->get_value();
+            const auto& defaultValue = value->get_default_value();
+            if (!storedValue.empty()) {
+                return storedValue;
+            }
+            if (defaultValue.has_value()) {
+                return defaultValue.value();
+            }
+            return std::vector<T>{};
         }
     };
 } // namespace argon
@@ -1222,6 +1373,11 @@ namespace argon {
         template <typename T>
         [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
             return context.add_positional(std::move(positional));
+        }
+
+        template <typename T>
+        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<T> {
+            return context.add_multi_positional(std::move(positional));
         }
     };
 

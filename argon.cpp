@@ -1,3 +1,4 @@
+#include <iostream>
 #include "argon.hpp"
 
 int main(const int argc, const char *argv[]) {
@@ -12,7 +13,10 @@ int main(const int argc, const char *argv[]) {
     auto multi_char_handle = cmd.add_multi_flag(argon::MultiFlag<char>("--chars").with_alias("-c")
         .with_default({'x', 'y', 'z'})
         .with_implicit({'a', 'b', 'c'}));
-    auto pos_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>());
 
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
         std::cout << opt->get_flag() << "\n";
@@ -40,7 +44,10 @@ int main(const int argc, const char *argv[]) {
     std::optional<int> bye   = results->get(bye_handle);
     std::vector<char> chars  = results->get(multi_char_handle);
     std::optional<std::string> str = results->get(str_handle);
-    std::optional<std::string> pos = results->get(pos_handle);
+    std::optional<std::string> pos1 = results->get(pos1_handle);
+    std::optional<std::string> pos2 = results->get(pos2_handle);
+    std::optional<std::string> pos3 = results->get(pos3_handle);
+    std::vector<std::string> strings = results->get(multi_pos_handle);
 
     if (!results->is_specified(str_handle)) {
         std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
@@ -53,11 +60,18 @@ int main(const int argc, const char *argv[]) {
     std::cout << "World: " << (world ? world.value() : -1)     << "\n";
     std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
     std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
-    std::cout << "Pos: "   << (pos ? pos.value() : "no value") << "\n";
+    std::cout << "Pos1: "   << (pos1 ? pos1.value() : "no value") << "\n";
+    std::cout << "Pos2: "   << (pos2 ? pos2.value() : "no value") << "\n";
+    std::cout << "Pos3: "   << (pos3 ? pos3.value() : "no value") << "\n";
 
     std::cout << "Chars: ";
     for (const char c : chars) {
         std::cout << c << " ";
     }
     std::cout << "\n";
+
+    std::cout << "Multi positionals:\n";
+    for (const auto& s : strings) {
+        std::cout << "\t" << s << "\n";
+    }
 }
