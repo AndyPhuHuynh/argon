@@ -16,7 +16,14 @@ int main(const int argc, const char *argv[]) {
     auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>());
     auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>());
     auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>());
-    auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>());
+    auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>()
+        .with_default({"hello", "world", "bye"}));
+
+    auto str_choice_handle = cmd.add_choice(argon::Choice<std::string>("--str-choice", {
+        { "one",   "one" },
+        { "two",   "two" },
+        { "three", "three" }
+    }));
 
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
         std::cout << opt->get_flag() << "\n";
@@ -48,6 +55,7 @@ int main(const int argc, const char *argv[]) {
     std::optional<std::string> pos2 = results->get(pos2_handle);
     std::optional<std::string> pos3 = results->get(pos3_handle);
     std::vector<std::string> strings = results->get(multi_pos_handle);
+    std::optional<std::string> str_choice = results->get(str_choice_handle);
 
     if (!results->is_specified(str_handle)) {
         std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
@@ -74,4 +82,6 @@ int main(const int argc, const char *argv[]) {
     for (const auto& s : strings) {
         std::cout << "\t" << s << "\n";
     }
+
+    std::cout << "Str Choice: " << (str_choice ? str_choice.value() : "no value") << "\n";
 }
