@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 #include <ranges>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -94,7 +93,7 @@ namespace argon::detail {
 namespace argon::detail {
     template <typename T> requires std::is_floating_point_v<T>
     auto parse_floating_point(const std::string_view arg) -> std::optional<T> {
-        if (arg.empty()) return false;
+        if (arg.empty()) return std::nullopt;
 
         const std::string temp{arg};
         const char *cStr = temp.c_str();
@@ -336,6 +335,13 @@ namespace argon::detail {
         const bool isNumber = parse_integral_type<uint32_t>(str) || parse_floating_point<float>(str);
         return !str.empty() && str[0] == '-' && !isNumber;
     }
+
+    inline auto validate_flag(const std::string_view flag) -> void {
+        if (!looks_like_flag(flag)) {
+            throw std::invalid_argument(std::format(
+                "Invalid flag '{}', flag must start with prefix '-' and must not be parseable as a number", flag));
+        }
+    }
 } // namespace argon::detail
 
 
@@ -351,10 +357,7 @@ namespace argon::detail {
     public:
         FlagBase() = default;
         explicit FlagBase(const std::string_view flag) {
-            if (!looks_like_flag(flag)) {
-                throw std::invalid_argument(std::format(
-                    "Invalid flag '{}', flag must start with prefix '-' and must not be parseable as a number", flag));
-            }
+            validate_flag(flag);
             m_flag = flag;
         }
         virtual ~FlagBase() = default;
@@ -378,10 +381,7 @@ namespace argon::detail {
     public:
         MultiFlagBase() = default;
         explicit MultiFlagBase(const std::string_view flag) {
-            if (!looks_like_flag(flag)) {
-                throw std::invalid_argument(std::format(
-                    "Invalid flag '{}', flag must start with prefix '-' and must not be parseable as a number", flag));
-            }
+            validate_flag(flag);
             m_flag = flag;
         };
         virtual ~MultiFlagBase() = default;
@@ -437,13 +437,34 @@ namespace argon::detail {
     public:
         ChoiceBase() = default;
         explicit ChoiceBase(const std::string_view flag) {
-            if (!looks_like_flag(flag)) {
-                throw std::invalid_argument(std::format(
-                    "Invalid flag '{}', flag must start with prefix '-' and must not be parseable as a number", flag));
-            }
+            validate_flag(flag);
             m_flag = flag;
         }
         virtual ~ChoiceBase() = default;
+
+        [[nodiscard]] auto get_flag() const -> const std::string& { return m_flag; }
+        [[nodiscard]] auto get_aliases() const -> const std::vector<std::string>& { return m_aliases; }
+
+        [[nodiscard]] virtual auto is_set() const -> bool = 0;
+        [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
+    };
+
+    class MultiChoiceBase {
+        friend class AstAnalyzer;
+
+    protected:
+        std::string m_flag;
+        std::vector<std::string> m_aliases;
+
+        [[nodiscard]] virtual auto set_value(std::span<const std::string_view> values)
+            -> std::expected<void, std::vector<std::string>> = 0;
+    public:
+        MultiChoiceBase() = default;
+        explicit MultiChoiceBase(const std::string_view flag) {
+            validate_flag(flag);
+            m_flag = flag;
+        };
+        virtual ~MultiChoiceBase() = default;
 
         [[nodiscard]] auto get_flag() const -> const std::string& { return m_flag; }
         [[nodiscard]] auto get_aliases() const -> const std::vector<std::string>& { return m_aliases; }
@@ -503,7 +524,7 @@ namespace argon {
 
         auto with_implicit(T implicitValue) & -> Flag& {
             m_implicitValue = std::move(implicitValue);
-            return std::move(*this);
+            return *this;
         }
 
         auto with_implicit(T implicitValue) && -> Flag&& {
@@ -575,7 +596,7 @@ namespace argon {
 
         auto with_implicit(std::vector<T> implicitValue) & -> MultiFlag& {
             m_implicitValue = std::move(implicitValue);
-            return std::move(*this);
+            return *this;
         }
 
         auto with_implicit(std::vector<T> implicitValue) && -> MultiFlag&& {
@@ -698,9 +719,9 @@ namespace argon {
         }
 
     public:
-        explicit Choice(const std::string_view flag, std::vector<std::pair<std::string, T>> choices) : ChoiceBase(flag) {
+        Choice(const std::string_view flag, std::vector<std::pair<std::string, T>> choices) : ChoiceBase(flag) {
             if (choices.empty()) {
-                throw std::invalid_argument("Choices map must not be empty");
+                throw std::invalid_argument(std::format("Choices map must not be empty for flag '{}'", this->get_flag()));
             }
             m_choices = std::move(choices);
         }
@@ -723,7 +744,7 @@ namespace argon {
 
         auto with_implicit(T implicitValue) & -> Choice& {
             m_implicitValue = std::move(implicitValue);
-            return std::move(*this);
+            return *this;
         }
 
         auto with_implicit(T implicitValue) && -> Choice&& {
@@ -733,6 +754,93 @@ namespace argon {
 
         [[nodiscard]] auto is_set() const -> bool override {
             return this->m_valueStorage.has_value();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
+        }
+    };
+
+    template <typename T>
+    class MultiChoice final
+            : public detail::MultiChoiceBase,
+              public detail::VectorValueStorage<MultiChoice<T>, T> {
+        std::vector<std::pair<std::string, T>> m_choices;
+        std::optional<std::vector<T>> m_implicitValue;
+
+        auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>> override {
+            std::vector<std::string> errors;
+            if (values.empty()) {
+                if (!is_implicit_set()) {
+                    errors.emplace_back(std::format(
+                        "Flag '{}' does not have an implicit value and no value was given", this->get_flag()));
+                }
+                this->m_valueStorage = m_implicitValue.value();
+                return {};
+            }
+
+            for (const auto& value : values) {
+                const auto it = std::ranges::find_if(m_choices, [&value](const auto& choice) -> bool {
+                    return choice.first == value;
+                });
+                if (it == m_choices.end()) {
+                    std::string possibleValues = std::ranges::fold_left(m_choices, std::string{},
+                        [](std::string acc, const auto& choice) {
+                            if (!acc.empty()) acc += " | ";
+                            acc += choice.first;
+                            return acc;
+                        }
+                    );
+                    errors.emplace_back(std::format(
+                        "Invalid value '{}' for flag '{}'. Valid values are: {}",
+                        value, this->get_flag(), possibleValues));
+                    continue;
+                }
+                this->m_valueStorage.emplace_back(it->second);
+            }
+            if (!errors.empty()) {
+                return std::unexpected(std::move(errors));
+            }
+            return {};
+        }
+
+    public:
+        MultiChoice(const std::string_view flag, std::vector<std::pair<std::string, T>> choices) : MultiChoiceBase(flag) {
+            if (choices.empty()) {
+                throw std::invalid_argument(std::format("Choices map must not be empty for flag '{}'", this->get_flag()));
+            }
+            m_choices = std::move(choices);
+        }
+
+
+        auto with_alias(std::string_view alias) & -> MultiChoice& {
+            if (this->m_flag == alias || std::ranges::contains(this->m_aliases, alias)) {
+                throw std::invalid_argument(std::format("Unable to add alias: flag/alias '{}' already exists", alias));
+            }
+            this->m_aliases.emplace_back(alias);
+            return *this;
+        }
+
+        auto with_alias(std::string_view alias) && -> MultiChoice&& {
+            if (this->m_flag == alias || std::ranges::contains(this->m_aliases, alias)) {
+                throw std::invalid_argument(std::format("Unable to add alias: flag/alias '{}' already exists", alias));
+            }
+            this->m_aliases.emplace_back(alias);
+            return std::move(*this);
+        }
+
+        auto with_implicit(std::vector<T> implicitValue) & -> MultiChoice& {
+            m_implicitValue = std::move(implicitValue);
+            return *this;
+        }
+
+        auto with_implicit(std::vector<T> implicitValue) && -> MultiChoice&& {
+            m_implicitValue = std::move(implicitValue);
+            return std::move(*this);
+        }
+
+        [[nodiscard]] auto is_set() const -> bool override {
+            return !this->m_valueStorage.empty();
         }
 
         [[nodiscard]] auto is_implicit_set() const -> bool override {
@@ -774,6 +882,7 @@ namespace argon {
     template <typename T> using PositionalHandle = Handle<T, detail::PositionalBase>;
     template <typename T> using MultiPositionalHandle = Handle<T, detail::MultiPositionalBase>;
     template <typename T> using ChoiceHandle = Handle<T, detail::ChoiceBase>;
+    template <typename T> using MultiChoiceHandle = Handle<T, detail::MultiChoiceBase>;
 } // namespace argon
 
 
@@ -792,6 +901,7 @@ namespace argon::detail {
         std::vector<UniqueId> m_positionalOrder;
         std::optional<std::pair<UniqueId, Polymorphic<MultiPositionalBase>>> m_multiPositional;
         std::unordered_map<UniqueId, Polymorphic<ChoiceBase>> m_choices;
+        std::unordered_map<UniqueId, Polymorphic<MultiChoiceBase>> m_multiChoices;
 
         template <typename T>
         [[nodiscard]] auto flag_or_alias_exists(const T& flag) const -> std::optional<std::string> {
@@ -864,6 +974,17 @@ namespace argon::detail {
             return handle;
         }
 
+        template <typename T>
+        [[nodiscard]] auto add_multi_choice(MultiChoice<T> flag) -> MultiChoiceHandle<T> {
+            if (const auto duplicateFlag = flag_or_alias_exists(flag); duplicateFlag.has_value()) {
+                throw std::invalid_argument(std::format(
+                    "Unable to add flag/alias: flag/alias '{}' already exists", duplicateFlag.value()));
+            }
+            MultiChoiceHandle<T> handle{};
+            m_multiChoices.emplace(handle.get_id(), detail::make_polymorphic<MultiChoiceBase>(std::move(flag)));
+            return handle;
+        }
+
         [[nodiscard]] auto contains_flag(const std::string_view flagName) const -> bool {
             return get_flag(flagName) != nullptr;
         }
@@ -878,6 +999,10 @@ namespace argon::detail {
 
         [[nodiscard]] auto contains_choice(const std::string_view flagName) const -> bool {
             return get_choice(flagName) != nullptr;
+        }
+
+        [[nodiscard]] auto contains_multi_choice(const std::string_view flagName) const -> bool {
+            return get_multi_choice(flagName) != nullptr;
         }
 
         [[nodiscard]] auto get_flag(const std::string_view flagName) -> FlagBase * {
@@ -973,6 +1098,28 @@ namespace argon::detail {
         [[nodiscard]] auto get_choices() const -> const std::unordered_map<UniqueId, Polymorphic<ChoiceBase>>& {
             return m_choices;
         }
+
+        [[nodiscard]] auto get_multi_choice(const std::string_view flagName) -> MultiChoiceBase * {
+            const auto it = std::ranges::find_if(m_multiChoices, [&](auto&& pair) -> bool {
+                const auto& flag = pair.second;
+                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
+            });
+            if (it == m_multiChoices.end()) return nullptr;
+            return it->second.get();
+        }
+
+        [[nodiscard]] auto get_multi_choice(const std::string_view flagName) const -> const MultiChoiceBase * {
+            const auto it = std::ranges::find_if(m_multiChoices, [&](auto&& pair) -> bool {
+                const auto& flag = pair.second;
+                return flag->get_flag() == flagName || std::ranges::contains(flag->get_aliases(), flagName);
+            });
+            if (it == m_multiChoices.end()) return nullptr;
+            return it->second.get();
+        }
+
+        [[nodiscard]] auto get_multi_choices() const -> const std::unordered_map<UniqueId, Polymorphic<MultiChoiceBase>>& {
+            return m_multiChoices;
+        }
     };
 } // namespace argon::detail
 
@@ -1067,9 +1214,9 @@ namespace argon::detail {
         std::optional<AstValue> value;
     };
 
-    struct GroupAst {
+    struct MultiChoiceAst {
         std::string name;
-        std::unique_ptr<AstContext> context;
+        std::vector<AstValue> values;
     };
 
     struct AstContext {
@@ -1078,7 +1225,7 @@ namespace argon::detail {
         std::vector<PositionalAst> positionals;
         MultiPositionalAst multiPositional;
         std::vector<ChoiceAst> choices;
-        std::vector<GroupAst> groups;
+        std::vector<MultiChoiceAst> multiChoices;
     };
 
     inline auto looks_like_flag(const Token& token) -> bool {
@@ -1103,7 +1250,7 @@ namespace argon::detail {
                 return std::unexpected(
                     std::format("Expected flag name at position {}, got '{}'", flagName->argvPosition, flagName->image));
             }
-            if (!std::invoke(contains_flag_fn, context, flagName->image)) {
+            if (!(context.*contains_flag_fn)(flagName->image)) {
                 return std::unexpected(
                     std::format(R"(Unknown flag '{}' at position {})", flagName->image, flagName->argvPosition));
             }
@@ -1248,6 +1395,31 @@ namespace argon::detail {
             return {};
         }
 
+        [[nodiscard]] static auto parse_multi_choice_ast(
+            Tokenizer& tokenizer,
+            const Context& context,
+            AstContext& astContext
+        ) -> std::expected<void, std::string> {
+            auto flagName = expect_flag_token(tokenizer, context, &Context::contains_multi_choice);
+            if (!flagName) return std::unexpected(std::move(flagName.error()));
+
+            MultiChoiceAst multiChoiceAst{ .name = flagName->image };
+            while (auto flagValue = expect_value(tokenizer)) {
+                multiChoiceAst.values.emplace_back(AstValue {
+                    .value = std::move(flagValue->image),
+                    .argvPosition =  flagValue->argvPosition
+                });
+            };
+
+            if (const auto flag = context.get_multi_choice(flagName->image);
+                multiChoiceAst.values.empty() && !flag->is_implicit_set()) {
+                return std::unexpected(
+                    std::format("Flag '{}' does not have an implicit value and no value was given", flagName->image));
+            }
+            astContext.multiChoices.push_back(std::move(multiChoiceAst));
+            return {};
+        }
+
         [[nodiscard]] static auto parse_root(Tokenizer& tokenizer, const Context& context) -> std::expected<AstContext, std::string> {
             AstContext astContext;
             while (const auto optToken = tokenizer.peek_token()) {
@@ -1268,14 +1440,16 @@ namespace argon::detail {
                     if (auto success = parse_flag_ast(tokenizer, context, astContext); !success)
                         return std::unexpected(std::move(success.error()));
                 } else if (context.contains_multi_flag(optToken->image)) {
-                    if (auto success = parse_multi_flag_ast(tokenizer, context, astContext); !success) {
+                    if (auto success = parse_multi_flag_ast(tokenizer, context, astContext); !success)
                         return std::unexpected(std::move(success.error()));
-                    }
                 } else if (context.contains_choice(optToken->image)) {
-                    if (auto success = parse_choice_ast(tokenizer, context, astContext); !success) {
+                    if (auto success = parse_choice_ast(tokenizer, context, astContext); !success)
                         return std::unexpected(std::move(success.error()));
-                    }
-                } else if (looks_like_flag(optToken->image)) {
+                } else if (context.contains_multi_choice(optToken->image)) {
+                    if (auto success = parse_multi_choice_ast(tokenizer, context, astContext); !success)
+                        return std::unexpected(std::move(success.error()));
+                }
+                else if (looks_like_flag(optToken->image)) {
                     return std::unexpected(std::format(
                         "Unknown flag '{}' at position",
                         optToken->image, optToken->argvPosition));
@@ -1428,6 +1602,31 @@ namespace argon::detail {
                 }
             }
 
+            for (const auto& [name, values] : ast.multiChoices) {
+                const auto opt = context.get_multi_choice(name);
+                if (!opt) {
+                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
+                    continue;
+                }
+
+                const auto valueViews =
+                    values
+                    | std::views::transform([](const AstValue& value) -> std::string_view
+                        { return std::string_view(value.value); })
+                    | std::ranges::to<std::vector<std::string_view>>();
+
+                if (auto success = opt->set_value(valueViews); !success) {
+                    const auto conversionErrors =
+                        success.error()
+                        | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
+                            return { .errorMsg = std::move(error) };
+                        })
+                        | std::ranges::to<std::vector<AnalysisError_Conversion>>();
+
+                    errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
+                }
+            }
+
             if (errors.empty()) return {};
             return std::unexpected(std::views::transform(errors, [](const AnalysisError& error) -> std::string
                     { return format_analysis_error(error); })
@@ -1445,6 +1644,7 @@ namespace argon {
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> m_multiPositionals;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::ChoiceBase>*> m_choices;
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> m_multiChoices;
 
         friend class detail::ConstraintValidator;
         friend class Cli;
@@ -1464,6 +1664,9 @@ namespace argon {
             }
             for (const auto& [id, choice] : context.get_choices()) {
                 m_choices.emplace(id, &choice);
+            }
+            for (const auto& [id, choice] : context.get_multi_choices()) {
+                m_multiChoices.emplace(id, &choice);
             }
         }
 
@@ -1486,7 +1689,15 @@ namespace argon {
         [[nodiscard]] auto get_choice_base(const detail::UniqueId id) const -> const detail::ChoiceBase * {
             const auto it = m_choices.find(id);
             if (it == m_choices.end()) {
-                throw std::invalid_argument("Invalid multi-flag ID: no multi-flag with this ID exists");
+                throw std::invalid_argument("Invalid choice ID: no multi-flag with this ID exists");
+            }
+            return it->second->get();
+        }
+
+        [[nodiscard]] auto get_multi_choice_base(const detail::UniqueId id) const -> const detail::MultiChoiceBase * {
+            const auto it = m_multiChoices.find(id);
+            if (it == m_multiChoices.end()) {
+                throw std::invalid_argument("Invalid multi-choice ID: no multi-flag with this ID exists");
             }
             return it->second->get();
         }
@@ -1506,6 +1717,12 @@ namespace argon {
         template <typename T>
         [[nodiscard]] auto is_specified(const ChoiceHandle<T>& handle) const -> bool {
             const auto base = get_choice_base(handle.get_id());
+            return base->is_set();
+        }
+
+        template <typename T>
+        [[nodiscard]] auto is_specified(const MultiChoiceHandle<T>& handle) const -> bool {
+            const auto base = get_multi_choice_base(handle.get_id());
             return base->is_set();
         }
 
@@ -1600,6 +1817,24 @@ namespace argon {
             }
             return std::nullopt;
         }
+
+        template <typename T>
+        [[nodiscard]] auto get(const MultiChoiceHandle<T>& handle) const -> std::vector<T> {
+            const auto base = get_multi_choice_base(handle.get_id());
+            const auto value = dynamic_cast<const MultiChoice<T>*>(base);
+            if (!value) {
+                throw std::logic_error("Internal error: multi-choice type mismatch");
+            }
+            const auto& storedValue = value->get_value();
+            const auto& defaultValue = value->get_default_value();
+            if (!storedValue.empty()) {
+                return storedValue;
+            }
+            if (defaultValue.has_value()) {
+                return defaultValue.value();
+            }
+            return std::vector<T>{};
+        }
     };
 } // namespace argon
 
@@ -1673,6 +1908,11 @@ namespace argon {
         template <typename T>
         [[nodiscard]] auto add_choice(Choice<T> choice) -> ChoiceHandle<T> {
             return context.add_choice(std::move(choice));
+        }
+
+        template <typename T>
+        [[nodiscard]] auto add_multi_choice(MultiChoice<T> choice) -> MultiChoiceHandle<T> {
+            return context.add_multi_choice(std::move(choice));
         }
     };
 

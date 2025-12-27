@@ -25,6 +25,14 @@ int main(const int argc, const char *argv[]) {
         { "three", "three" }
     }));
 
+    auto num_choice_handle = cmd.add_multi_choice(argon::MultiChoice<int>("--num-choices", {
+            { "one",   1 },
+            { "two",   2 },
+            { "three", 3 }
+        })
+        .with_default({4, 5, 6})
+        .with_implicit({7, 8, 9}));
+
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
         std::cout << opt->get_flag() << "\n";
         for (const auto& alias : opt->get_aliases()) {
@@ -56,6 +64,7 @@ int main(const int argc, const char *argv[]) {
     std::optional<std::string> pos3 = results->get(pos3_handle);
     std::vector<std::string> strings = results->get(multi_pos_handle);
     std::optional<std::string> str_choice = results->get(str_choice_handle);
+    std::vector<int> num_choices = results->get(num_choice_handle);
 
     if (!results->is_specified(str_handle)) {
         std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
@@ -83,5 +92,11 @@ int main(const int argc, const char *argv[]) {
         std::cout << "\t" << s << "\n";
     }
 
-    std::cout << "Str Choice: " << (str_choice ? str_choice.value() : "no value") << "\n";
+    std::cout << "Str choice: " << (str_choice ? str_choice.value() : "no value") << "\n";
+
+    std::cout << "Num choices:\n";
+    for (const auto& num : num_choices) {
+        std::cout << "\t" << num << "\n";
+    }
+    return 0;
 }
