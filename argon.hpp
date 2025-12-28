@@ -346,6 +346,46 @@ namespace argon::detail {
 
 
 namespace argon::detail {
+    template <typename T>
+    struct SingleValidator {
+        std::function<bool(const T&)> function;
+        std::string errorMsg;
+    };
+
+    template <typename Derived, typename T>
+    class SingleValueValidatorMixin {
+    protected:
+        std::vector<SingleValidator<T>> m_validators;
+
+        auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) & -> Derived& {
+            m_validators.emplace_back(SingleValidator<T>{
+                .function = std::move(validationFn),
+                .errorMsg = errorMsg
+            });
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
+            m_validators.emplace_back(SingleValidator<T>{
+                .function = std::move(validationFn),
+                .errorMsg = errorMsg
+            });
+            return static_cast<Derived&&>(*this);
+        }
+
+        auto apply_validators(const T& value) -> std::expected<void, std::string> {
+            for (const auto& validator : m_validators) {
+                if (!validator.function(value)) {
+                    return std::unexpected(validator.errorMsg);
+                }
+            }
+            return {};
+        }
+    };
+} // namespace argon::detail
+
+
+namespace argon::detail {
     class FlagBase {
         friend class AstAnalyzer;
 
@@ -354,6 +394,7 @@ namespace argon::detail {
         std::vector<std::string> m_aliases;
 
         [[nodiscard]] virtual auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
+        [[nodiscard]] virtual auto validate_value() -> std::expected<void, std::string> = 0;
     public:
         FlagBase() = default;
         explicit FlagBase(const std::string_view flag) {
@@ -480,7 +521,8 @@ namespace argon {
     class Flag final
             : public detail::FlagBase,
               public detail::SingleValueStorage<Flag<T>, T>,
-              public detail::Converter<Flag<T>, T> {
+              public detail::Converter<Flag<T>, T>,
+              public detail::SingleValueValidatorMixin<Flag<T>, T> {
         std::optional<T> m_implicitValue;
 
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
@@ -500,6 +542,22 @@ namespace argon {
                     str.value(), this->get_flag(), result.error()));
             }
             this->m_valueStorage = result.value();
+            return {};
+        }
+
+        auto validate_value() -> std::expected<void, std::string> override {
+            if (this->m_valueStorage.has_value()) {
+                auto res = this->apply_validators(this->m_valueStorage.value());
+                if (!res) return std::unexpected(std::move(res.error()));
+            }
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_validators(this->m_defaultValue.value());
+                if (!res) return std::unexpected(std::move(res.error()));
+            }
+            if (this->m_implicitValue.has_value()) {
+                auto res = this->apply_validators(this->m_implicitValue.value());
+                if (!res) return std::unexpected(std::move(res.error()));
+            }
             return {};
         }
 
@@ -1274,7 +1332,7 @@ namespace argon::detail {
             if (!flagName) return std::unexpected(std::move(flagName.error()));
             const auto flag = context.get_flag(flagName->image);
 
-            auto flagValue = tokenizer.peek_token();
+            auto flagValue = expect_value(tokenizer);
             if (!flagValue) {
                 if (flag->is_implicit_set()) {
                     FlagAst flagAst{
@@ -1509,6 +1567,101 @@ namespace argon::detail {
     }
 
     class AstAnalyzer {
+        static auto to_string_views(const std::vector<AstValue>& values) -> std::vector<std::string_view> {
+            return values
+                | std::views::transform([](const AstValue& value) -> std::string_view
+                    { return std::string_view(value.value); })
+                | std::ranges::to<std::vector<std::string_view>>();
+        }
+
+        static auto append_conversion_errors(
+            std::vector<std::string> errorMsgs,
+            std::vector<AnalysisError>& errors
+        ) -> void {
+            const auto conversionErrors =
+                errorMsgs
+                | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
+                    return { .errorMsg = std::move(error) };
+                })
+                | std::ranges::to<std::vector<AnalysisError_Conversion>>();
+
+            errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
+        }
+
+        template <typename AstVec, typename GetOption>
+        static auto process_single_value_option(
+            const AstVec& asts,
+            std::vector<AnalysisError>& errors,
+            GetOption getOption
+        ) -> void {
+            for (const auto& [name, value] : asts) {
+                const auto opt = getOption(name);
+                if (!opt) {
+                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
+                    continue;
+                }
+                auto success = opt->set_value(value ?
+                    std::optional<std::string_view>{value->value} :
+                    std::optional<std::string_view>{std::nullopt});
+                if (!success) {
+                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
+                }
+            }
+        }
+
+        template <typename AstVec, typename GetOption>
+        static auto process_multi_value_option(
+            const AstVec& asts,
+            std::vector<AnalysisError>& errors,
+            GetOption getOption
+        ) -> void{
+            for (const auto& [name, values] : asts) {
+                const auto opt = getOption(name);
+                if (!opt) {
+                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
+                    continue;
+                }
+
+                const auto valueViews = to_string_views(values);
+                if (auto success = opt->set_value(valueViews); !success) {
+                    append_conversion_errors(std::move(success.error()), errors);
+                }
+            }
+        }
+
+        static auto process_positionals(
+            const std::vector<PositionalAst>& positionals,
+            std::vector<AnalysisError>& errors,
+            Context& context
+        ) -> void {
+            for (size_t i = 0; i < positionals.size() && i < context.get_num_positionals(); ++i) {
+                const auto opt = context.get_positional(i);
+                if (!opt) continue;
+                if (auto success = opt->set_value(positionals[i].value.value); !success) {
+                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
+                }
+            }
+            if (positionals.size() > context.get_num_positionals()) {
+                errors.emplace_back(AnalysisError_TooManyPositionals{
+                    .max = context.get_num_positionals(),
+                    .actual = positionals.size()
+                });
+            }
+        }
+
+        static auto process_multi_positionals(
+            const MultiPositionalAst& multiPositional,
+            std::vector<AnalysisError>& errors,
+            Context& context
+        ) -> void {
+            const auto multiPos = context.get_multi_positional_ptr();
+            if (!multiPos) return;
+            const auto values = to_string_views(multiPositional.values);
+            if (auto success = multiPos->set_value(values); !success) {
+                append_conversion_errors(std::move(success.error()), errors);
+            }
+        }
+
     public:
         [[nodiscard]] static auto analyze(
             const AstContext& ast,
@@ -1516,116 +1669,16 @@ namespace argon::detail {
         ) -> std::expected<void, std::vector<std::string>> {
             std::vector<AnalysisError> errors;
 
-            for (const auto& [name, value] : ast.flags) {
-                const auto opt = context.get_flag(name);
-                if (!opt) {
-                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
-                    continue;
-                }
-                auto success = opt->set_value(value ?
-                    std::optional<std::string_view>{value->value} :
-                    std::optional<std::string_view>{std::nullopt});
-                if (!success) {
-                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
-                }
-            }
-
-            for (const auto& [name, values] : ast.multiFlags) {
-                const auto opt = context.get_multi_flag(name);
-                if (!opt) {
-                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
-                    continue;
-                }
-
-                const auto valueViews =
-                    values
-                    | std::views::transform([](const AstValue& value) -> std::string_view
-                        { return std::string_view(value.value); })
-                    | std::ranges::to<std::vector<std::string_view>>();
-
-                if (auto success = opt->set_value(valueViews); !success) {
-                    const auto conversionErrors =
-                        success.error()
-                        | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
-                            return { .errorMsg = std::move(error) };
-                        })
-                        | std::ranges::to<std::vector<AnalysisError_Conversion>>();
-
-                    errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
-                }
-            }
-
-            for (size_t i = 0; i < ast.positionals.size() && i < context.get_num_positionals(); ++i) {
-                const auto opt = context.get_positional(i);
-                if (!opt) continue;
-                if (auto success = opt->set_value(ast.positionals[i].value.value); !success) {
-                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
-                }
-            }
-            if (ast.positionals.size() > context.get_num_positionals()) {
-                errors.emplace_back(AnalysisError_TooManyPositionals{
-                    .max = context.get_num_positionals(),
-                    .actual = ast.positionals.size()
-                });
-            }
-
-            if (const auto multiPos = context.get_multi_positional_ptr(); multiPos) {
-                const auto multiPositionalValues =
-                ast.multiPositional.values
-                | std::views::transform([](const AstValue& value) -> std::string_view
-                    { return std::string_view(value.value); })
-                | std::ranges::to<std::vector<std::string_view>>();
-
-                if (auto success = multiPos->set_value(multiPositionalValues); !success) {
-                    const auto conversionErrors =
-                        success.error()
-                        | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
-                            return { .errorMsg = std::move(error) };
-                        })
-                        | std::ranges::to<std::vector<AnalysisError_Conversion>>();
-
-                    errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
-                }
-            }
-
-            for (const auto& [name, value] : ast.choices) {
-                const auto opt = context.get_choice(name);
-                if (!opt) {
-                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
-                    continue;
-                }
-                auto success = opt->set_value(value ?
-                    std::optional<std::string_view>{value->value} :
-                    std::optional<std::string_view>{std::nullopt});
-                if (!success) {
-                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
-                }
-            }
-
-            for (const auto& [name, values] : ast.multiChoices) {
-                const auto opt = context.get_multi_choice(name);
-                if (!opt) {
-                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
-                    continue;
-                }
-
-                const auto valueViews =
-                    values
-                    | std::views::transform([](const AstValue& value) -> std::string_view
-                        { return std::string_view(value.value); })
-                    | std::ranges::to<std::vector<std::string_view>>();
-
-                if (auto success = opt->set_value(valueViews); !success) {
-                    const auto conversionErrors =
-                        success.error()
-                        | std::views::transform([] (std::string& error) -> AnalysisError_Conversion {
-                            return { .errorMsg = std::move(error) };
-                        })
-                        | std::ranges::to<std::vector<AnalysisError_Conversion>>();
-
-                    errors.insert(errors.end(), conversionErrors.begin(), conversionErrors.end());
-                }
-            }
+            process_single_value_option(ast.flags, errors,
+                [&context](const std::string_view name) { return context.get_flag(name); });
+            process_multi_value_option(ast.multiFlags, errors,
+                [&context](const std::string_view name) { return context.get_multi_flag(name); });
+            process_positionals(ast.positionals, errors, context);
+            process_multi_positionals(ast.multiPositional, errors, context);
+            process_single_value_option(ast.choices, errors,
+                [&context](const std::string_view name) { return context.get_choice(name); });
+            process_multi_value_option(ast.multiChoices, errors,
+                [&context](const std::string_view name) { return context.get_multi_choice(name); });
 
             if (errors.empty()) return {};
             return std::unexpected(std::views::transform(errors, [](const AnalysisError& error) -> std::string
