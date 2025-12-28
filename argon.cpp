@@ -4,7 +4,8 @@
 int main(const int argc, const char *argv[]) {
     auto cmd = argon::Command("app");
     auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello").with_alias("-h")
-        .with_implicit(2025));
+        .with_implicit(2026)
+        .with_validator([](const int& x) { return x % 2 == 0; }, "value must be even"));
     auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
     auto bye_handle   = cmd.add_flag(argon::Flag<int>("--bye").with_alias("-b"));
     auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s")
@@ -13,7 +14,8 @@ int main(const int argc, const char *argv[]) {
     auto multi_char_handle = cmd.add_multi_flag(argon::MultiFlag<char>("--chars").with_alias("-c")
         .with_default({'x', 'y', 'z'})
         .with_implicit({'a', 'b', 'c'}));
-    auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>()
+        .with_validator([](const std::string& str) { return str.length() < 5; }, "string must be less than 5 characters"));
     auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>());
     auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>());
     auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>()

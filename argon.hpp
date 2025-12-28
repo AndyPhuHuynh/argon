@@ -357,19 +357,14 @@ namespace argon::detail {
     protected:
         std::vector<SingleValidator<T>> m_validators;
 
+    public:
         auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) & -> Derived& {
-            m_validators.emplace_back(SingleValidator<T>{
-                .function = std::move(validationFn),
-                .errorMsg = errorMsg
-            });
+            m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&>(*this);
         }
 
         auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
-            m_validators.emplace_back(SingleValidator<T>{
-                .function = std::move(validationFn),
-                .errorMsg = errorMsg
-            });
+            m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&&>(*this);
         }
 
@@ -394,7 +389,6 @@ namespace argon::detail {
         std::vector<std::string> m_aliases;
 
         [[nodiscard]] virtual auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
-        [[nodiscard]] virtual auto validate_value() -> std::expected<void, std::string> = 0;
     public:
         FlagBase() = default;
         explicit FlagBase(const std::string_view flag) {
@@ -535,27 +529,42 @@ namespace argon {
                 return {};
             }
 
-            auto result = this->convert(str.value());
-            if (!result.has_value()) {
+            auto convert = this->convert(str.value());
+            if (!convert.has_value()) {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for flag '{}': {}",
-                    str.value(), this->get_flag(), result.error()));
+                    str.value(), this->get_flag(), convert.error()));
             }
-            this->m_valueStorage = result.value();
+            this->m_valueStorage = convert.value();
+
+            auto validate = validate_value(str.value());
+            if (!validate.has_value()) {
+                return std::unexpected(std::format(
+                    "Invalid value '{}' for flag '{}': {}",
+                    str.value(), this->get_flag(), validate.error()));
+            }
             return {};
         }
 
-        auto validate_value() -> std::expected<void, std::string> override {
-            if (this->m_valueStorage.has_value()) {
-                auto res = this->apply_validators(this->m_valueStorage.value());
-                if (!res) return std::unexpected(std::move(res.error()));
-            }
+        auto validate_value(const std::string_view) -> std::expected<void, std::string> {
             if (this->m_defaultValue.has_value()) {
                 auto res = this->apply_validators(this->m_defaultValue.value());
-                if (!res) return std::unexpected(std::move(res.error()));
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Default value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
             }
             if (this->m_implicitValue.has_value()) {
                 auto res = this->apply_validators(this->m_implicitValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Implicit value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+            if (this->m_valueStorage.has_value()) {
+                auto res = this->apply_validators(this->m_valueStorage.value());
                 if (!res) return std::unexpected(std::move(res.error()));
             }
             return {};
@@ -675,7 +684,8 @@ namespace argon {
     class Positional final
             : public detail::PositionalBase,
               public detail::SingleValueStorage<Positional<T>, T>,
-              public detail::Converter<Positional<T>, T> {
+              public detail::Converter<Positional<T>, T> ,
+              public detail::SingleValueValidatorMixin<Positional<T>, T> {
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
             auto result = this->convert(str.value());
             if (!result) {
@@ -689,6 +699,38 @@ namespace argon {
                     str.value(), result.error()));
             }
             this->m_valueStorage = result.value();
+
+            auto validate = validate_value(str.value());
+            if (!validate.has_value()) {
+                if (const auto name = this->get_name(); name.has_value()) {
+                    return std::unexpected(std::format(
+                        "Invalid value '{}' for '{}': {}",
+                        str.value(), name.value(), validate.error()));
+                }
+                return std::unexpected(std::format(
+                    "Invalid value '{}' for positional argument: {}",
+                    str.value(), validate.error()));
+            }
+            return {};
+        }
+
+        auto validate_value(const std::string_view) -> std::expected<void, std::string> {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_validators(this->m_defaultValue.value());
+                if (!res) {
+                    if (const auto name = this->get_name(); name.has_value()) {
+                        throw std::logic_error(std::format(
+                            "Default value for positional '{}' does not meet the validation requirement: {}",
+                            name.value(), res.error()));
+                    }
+                    throw std::logic_error(std::format(
+                        "Default value for positional does not meet the validation requirement: {}", res.error()));
+                }
+            }
+            if (this->m_valueStorage.has_value()) {
+                auto res = this->apply_validators(this->m_valueStorage.value());
+                if (!res) return std::unexpected(std::move(res.error()));
+            }
             return {};
         }
 
@@ -771,7 +813,6 @@ namespace argon {
                     "Invalid value '{}' for flag '{}'. Valid values are: {}",
                     str.value(), this->get_flag(), values));
             }
-
             this->m_valueStorage = it->second;
             return {};
         }
@@ -1591,20 +1632,21 @@ namespace argon::detail {
         template <typename AstVec, typename GetOption>
         static auto process_single_value_option(
             const AstVec& asts,
-            std::vector<AnalysisError>& errors,
+            std::vector<AnalysisError>& analysisErrors,
             GetOption getOption
         ) -> void {
             for (const auto& [name, value] : asts) {
                 const auto opt = getOption(name);
                 if (!opt) {
-                    errors.emplace_back(AnalysisError_UnknownFlag { .name = name });
+                    analysisErrors.emplace_back(AnalysisError_UnknownFlag { .name = name });
                     continue;
                 }
-                auto success = opt->set_value(value ?
+
+                auto setValue = opt->set_value(value ?
                     std::optional<std::string_view>{value->value} :
                     std::optional<std::string_view>{std::nullopt});
-                if (!success) {
-                    errors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(success.error()) });
+                if (!setValue) {
+                    analysisErrors.emplace_back(AnalysisError_Conversion{ .errorMsg = std::move(setValue.error()) });
                 }
             }
         }
@@ -1667,23 +1709,29 @@ namespace argon::detail {
             const AstContext& ast,
             Context& context
         ) -> std::expected<void, std::vector<std::string>> {
-            std::vector<AnalysisError> errors;
+            std::vector<AnalysisError> analysisErrors;
+            std::vector<std::string> validationErrors;
 
-            process_single_value_option(ast.flags, errors,
+            process_single_value_option(ast.flags, analysisErrors,
                 [&context](const std::string_view name) { return context.get_flag(name); });
-            process_multi_value_option(ast.multiFlags, errors,
+            process_multi_value_option(ast.multiFlags, analysisErrors,
                 [&context](const std::string_view name) { return context.get_multi_flag(name); });
-            process_positionals(ast.positionals, errors, context);
-            process_multi_positionals(ast.multiPositional, errors, context);
-            process_single_value_option(ast.choices, errors,
+            process_positionals(ast.positionals, analysisErrors, context);
+            process_multi_positionals(ast.multiPositional, analysisErrors, context);
+            process_single_value_option(ast.choices, analysisErrors,
                 [&context](const std::string_view name) { return context.get_choice(name); });
-            process_multi_value_option(ast.multiChoices, errors,
+            process_multi_value_option(ast.multiChoices, analysisErrors,
                 [&context](const std::string_view name) { return context.get_multi_choice(name); });
 
-            if (errors.empty()) return {};
-            return std::unexpected(std::views::transform(errors, [](const AnalysisError& error) -> std::string
+            if (!analysisErrors.empty()) {
+                return std::unexpected(std::views::transform(analysisErrors, [](const AnalysisError& error) -> std::string
                     { return format_analysis_error(error); })
                 | std::ranges::to<std::vector>());
+            }
+            if (!validationErrors.empty()) {
+                return std::unexpected(std::move(validationErrors));
+            }
+            return {};
         }
     };
 } // namespace argon::detail
