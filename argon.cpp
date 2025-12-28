@@ -5,7 +5,7 @@ int main(const int argc, const char *argv[]) {
     auto cmd = argon::Command("app");
     auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello").with_alias("-h")
         .with_implicit(2026)
-        .with_validator([](const int& x) { return x % 2 == 0; }, "value must be even"));
+        .with_value_validator([](const int& x) { return x % 2 == 0; }, "value must be even"));
     auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
     auto bye_handle   = cmd.add_flag(argon::Flag<int>("--bye").with_alias("-b"));
     auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s")
@@ -13,13 +13,19 @@ int main(const int argc, const char *argv[]) {
         .with_implicit("implicit value!"));
     auto multi_char_handle = cmd.add_multi_flag(argon::MultiFlag<char>("--chars").with_alias("-c")
         .with_default({'x', 'y', 'z'})
-        .with_implicit({'a', 'b', 'c'}));
+        .with_implicit({'a', 'b', 'c'})
+        .with_value_validator([](const char& c) { return c >= 'a' && c <= 'z'; }, "value must be a lowercase alphabetic character")
+        .with_group_validator([](const std::vector<char>& vec) { return vec.size() >= 3; }, "at least 3 values must be provided")
+    );
     auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>()
-        .with_validator([](const std::string& str) { return str.length() < 5; }, "string must be less than 5 characters"));
+        .with_value_validator([](const std::string& str) { return str.length() < 5; }, "string must be less than 5 characters"));
     auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>());
     auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>());
-    auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>()
-        .with_default({"hello", "world", "bye"}));
+    auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>("extra positionals")
+        .with_default({"hello", "world", "bye"})
+        .with_value_validator([](const std::string& str) { return !str.empty() && str[0] == 'p'; }, "string must start with p")
+        .with_group_validator([](const auto& values) { return values.size() >= 3; }, "at least 3 values must be provided")
+    );
 
     auto str_choice_handle = cmd.add_choice(argon::Choice<std::string>("--str-choice", {
         { "one",   "one" },
@@ -33,7 +39,9 @@ int main(const int argc, const char *argv[]) {
             { "three", 3 }
         })
         .with_default({4, 5, 6})
-        .with_implicit({7, 8, 9}));
+        .with_implicit({7, 8, 9})
+        .with_group_validator([](const auto& vec) { return vec.size() >= 3; }, "at least 3 values must be provided")
+    );
 
     for (const auto& opt : cmd.context.get_flags() | std::views::values) {
         std::cout << opt->get_flag() << "\n";

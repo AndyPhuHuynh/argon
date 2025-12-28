@@ -347,28 +347,60 @@ namespace argon::detail {
 
 namespace argon::detail {
     template <typename T>
-    struct SingleValidator {
+    struct ValueValidator {
         std::function<bool(const T&)> function;
         std::string errorMsg;
     };
 
+    template <typename T>
+    struct GroupValidator {
+        std::function<bool(const std::vector<T>&)> function;
+        std::string errorMsg;
+    };
+
     template <typename Derived, typename T>
-    class SingleValueValidatorMixin {
+    class ValueValidatorMixin {
     protected:
-        std::vector<SingleValidator<T>> m_validators;
+        std::vector<ValueValidator<T>> m_validators;
 
     public:
-        auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) & -> Derived& {
+        auto with_value_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) & -> Derived& {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&>(*this);
         }
 
-        auto with_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
+        auto with_value_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&&>(*this);
         }
 
-        auto apply_validators(const T& value) -> std::expected<void, std::string> {
+        auto apply_value_validator(const T& value) -> std::expected<void, std::string> {
+            for (const auto& validator : m_validators) {
+                if (!validator.function(value)) {
+                    return std::unexpected(validator.errorMsg);
+                }
+            }
+            return {};
+        }
+    };
+
+    template <typename Derived, typename T>
+    class GroupValidatorMixin {
+    protected:
+        std::vector<GroupValidator<T>> m_validators;
+
+    public:
+        auto with_group_validator(std::function<bool(const std::vector<T>&)> validationFn, const std::string_view errorMsg) & -> Derived& {
+            m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_group_validator(std::function<bool(const std::vector<T>&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
+            m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
+            return static_cast<Derived&&>(*this);
+        }
+
+        auto apply_group_validator(const std::vector<T>& value) -> std::expected<void, std::string> {
             for (const auto& validator : m_validators) {
                 if (!validator.function(value)) {
                     return std::unexpected(validator.errorMsg);
@@ -516,10 +548,27 @@ namespace argon {
             : public detail::FlagBase,
               public detail::SingleValueStorage<Flag<T>, T>,
               public detail::Converter<Flag<T>, T>,
-              public detail::SingleValueValidatorMixin<Flag<T>, T> {
+              public detail::ValueValidatorMixin<Flag<T>, T> {
         std::optional<T> m_implicitValue;
 
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_value_validator(this->m_defaultValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Default value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+            if (this->m_implicitValue.has_value()) {
+                auto res = this->apply_value_validator(this->m_implicitValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Implicit value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+
             if (str == std::nullopt) {
                 if (!is_implicit_set()) {
                     return std::unexpected(
@@ -537,35 +586,11 @@ namespace argon {
             }
             this->m_valueStorage = convert.value();
 
-            auto validate = validate_value(str.value());
+            auto validate = this->apply_value_validator(this->m_valueStorage.value());
             if (!validate.has_value()) {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for flag '{}': {}",
                     str.value(), this->get_flag(), validate.error()));
-            }
-            return {};
-        }
-
-        auto validate_value(const std::string_view) -> std::expected<void, std::string> {
-            if (this->m_defaultValue.has_value()) {
-                auto res = this->apply_validators(this->m_defaultValue.value());
-                if (!res) {
-                    throw std::logic_error(std::format(
-                        "Default value for flag '{}' does not meet the validation requirement: {}",
-                        this->get_flag(), res.error()));
-                }
-            }
-            if (this->m_implicitValue.has_value()) {
-                auto res = this->apply_validators(this->m_implicitValue.value());
-                if (!res) {
-                    throw std::logic_error(std::format(
-                        "Implicit value for flag '{}' does not meet the validation requirement: {}",
-                        this->get_flag(), res.error()));
-                }
-            }
-            if (this->m_valueStorage.has_value()) {
-                auto res = this->apply_validators(this->m_valueStorage.value());
-                if (!res) return std::unexpected(std::move(res.error()));
             }
             return {};
         }
@@ -612,10 +637,29 @@ namespace argon {
     class MultiFlag final
             : public detail::MultiFlagBase,
               public detail::VectorValueStorage<MultiFlag<T>, T>,
-              public detail::Converter<MultiFlag<T>, T> {
+              public detail::Converter<MultiFlag<T>, T>,
+              public detail::ValueValidatorMixin<MultiFlag<T>, T>,
+              public detail::GroupValidatorMixin<MultiFlag<T>, T> {
         std::optional<std::vector<T>> m_implicitValue;
 
         auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>> override {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_group_validator(this->m_defaultValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Default value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+            if (this->m_implicitValue.has_value()) {
+                auto res = this->apply_group_validator(this->m_implicitValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Implicit value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+
             std::vector<std::string> errors;
             if (values.empty()) {
                 if (!is_implicit_set()) {
@@ -634,8 +678,23 @@ namespace argon {
                         value, this->get_flag(), result.error()));
                     continue;
                 }
+
+                auto validate = this->apply_value_validator(result.value());
+                if (!validate.has_value()) {
+                    errors.emplace_back(std::format(
+                        "Invalid value '{}' for flag '{}': {}",
+                        value, this->get_flag(), validate.error()));
+                }
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
+
+            auto validate = this->apply_group_validator(this->m_valueStorage);
+            if (!validate.has_value()) {
+                errors.emplace_back(std::format(
+                    "Invalid values for flag '{}': {}",
+                    this->get_flag(), validate.error()));
+            }
+
             if (!errors.empty()) {
                 return std::unexpected(std::move(errors));
             }
@@ -685,8 +744,21 @@ namespace argon {
             : public detail::PositionalBase,
               public detail::SingleValueStorage<Positional<T>, T>,
               public detail::Converter<Positional<T>, T> ,
-              public detail::SingleValueValidatorMixin<Positional<T>, T> {
+              public detail::ValueValidatorMixin<Positional<T>, T> {
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_value_validator(this->m_defaultValue.value());
+                if (!res) {
+                    if (const auto name = this->get_name(); name.has_value()) {
+                        throw std::logic_error(std::format(
+                            "Default value for positional '{}' does not meet the validation requirement: {}",
+                            name.value(), res.error()));
+                    }
+                    throw std::logic_error(std::format(
+                        "Default value for positional does not meet the validation requirement: {}", res.error()));
+                }
+            }
+
             auto result = this->convert(str.value());
             if (!result) {
                 if (const auto name = this->get_name(); name.has_value()) {
@@ -700,7 +772,7 @@ namespace argon {
             }
             this->m_valueStorage = result.value();
 
-            auto validate = validate_value(str.value());
+            auto validate = this->apply_value_validator(this->m_valueStorage.value());
             if (!validate.has_value()) {
                 if (const auto name = this->get_name(); name.has_value()) {
                     return std::unexpected(std::format(
@@ -710,26 +782,6 @@ namespace argon {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for positional argument: {}",
                     str.value(), validate.error()));
-            }
-            return {};
-        }
-
-        auto validate_value(const std::string_view) -> std::expected<void, std::string> {
-            if (this->m_defaultValue.has_value()) {
-                auto res = this->apply_validators(this->m_defaultValue.value());
-                if (!res) {
-                    if (const auto name = this->get_name(); name.has_value()) {
-                        throw std::logic_error(std::format(
-                            "Default value for positional '{}' does not meet the validation requirement: {}",
-                            name.value(), res.error()));
-                    }
-                    throw std::logic_error(std::format(
-                        "Default value for positional does not meet the validation requirement: {}", res.error()));
-                }
-            }
-            if (this->m_valueStorage.has_value()) {
-                auto res = this->apply_validators(this->m_valueStorage.value());
-                if (!res) return std::unexpected(std::move(res.error()));
             }
             return {};
         }
@@ -747,8 +799,23 @@ namespace argon {
     class MultiPositional final
             : public detail::MultiPositionalBase,
               public detail::VectorValueStorage<MultiPositional<T>, T>,
-              public detail::Converter<MultiPositional<T>, T> {
+              public detail::Converter<MultiPositional<T>, T>,
+              public detail::ValueValidatorMixin<MultiPositional<T>, T>,
+              public detail::GroupValidatorMixin<MultiPositional<T>, T> {
         auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>>  override {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_group_validator(this->m_defaultValue.value());
+                if (!res) {
+                    if (const auto name = this->get_name(); name.has_value()) {
+                        throw std::logic_error(std::format(
+                            "Default value for '{}' does not meet the validation requirement: {}",
+                            name.value(), res.error()));
+                    }
+                    throw std::logic_error(std::format(
+                        "Default value for multi-positional does not meet the validation requirement: {}", res.error()));
+                }
+            }
+
             std::vector<std::string> errors;
             for (const auto& value : values) {
                 auto result = this->convert(value);
@@ -759,13 +826,36 @@ namespace argon {
                             result.value(), name.value(), result.error()));
                     } else {
                         errors.emplace_back(std::format(
-                            "Invalid value '{}' for multi-positional argument",
+                            "Invalid value '{}' for multi-positional: {}",
                             result.value(), result.error()));
                     }
                     continue;
                 }
+
+                auto validate = this->apply_value_validator(result.value());
+                if (!validate.has_value()) {
+                    if (const auto name = this->get_name(); name.has_value()) {
+                        errors.emplace_back(std::format(
+                            "Invalid value '{}' for '{}': {}",
+                            result.value(), name.value(), validate.error()));
+                    } else {
+                        errors.emplace_back(std::format(
+                            "Invalid value '{}' for multi-positional argument: {}",
+                            result.value(), validate.error()));
+                    }
+                }
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
+
+            auto validate = this->apply_group_validator(this->m_valueStorage);
+            if (!validate.has_value()) {
+                if (const auto name = this->get_name(); name.has_value()) {
+                    errors.emplace_back(std::format("Invalid values for '{}': {}", name.value(), validate.error()));
+                } else {
+                    errors.emplace_back(std::format("Invalid values for multi-positional argument: {}", validate.error()));
+                }
+            }
+
             if (!errors.empty()) {
                 return std::unexpected(std::move(errors));
             }
@@ -863,11 +953,29 @@ namespace argon {
     template <typename T>
     class MultiChoice final
             : public detail::MultiChoiceBase,
-              public detail::VectorValueStorage<MultiChoice<T>, T> {
+              public detail::VectorValueStorage<MultiChoice<T>, T>,
+              public detail::GroupValidatorMixin<MultiChoice<T>, T> {
         std::vector<std::pair<std::string, T>> m_choices;
         std::optional<std::vector<T>> m_implicitValue;
 
         auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>> override {
+            if (this->m_defaultValue.has_value()) {
+                auto res = this->apply_group_validator(this->m_defaultValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Default value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+            if (this->m_implicitValue.has_value()) {
+                auto res = this->apply_group_validator(this->m_implicitValue.value());
+                if (!res) {
+                    throw std::logic_error(std::format(
+                        "Implicit value for flag '{}' does not meet the validation requirement: {}",
+                        this->get_flag(), res.error()));
+                }
+            }
+
             std::vector<std::string> errors;
             if (values.empty()) {
                 if (!is_implicit_set()) {
@@ -897,6 +1005,14 @@ namespace argon {
                 }
                 this->m_valueStorage.emplace_back(it->second);
             }
+
+            auto validate = this->apply_group_validator(this->m_valueStorage);
+            if (!validate.has_value()) {
+                errors.emplace_back(std::format(
+                    "Invalid values for flag '{}': {}",
+                    this->get_flag(), validate.error()));
+            }
+
             if (!errors.empty()) {
                 return std::unexpected(std::move(errors));
             }
