@@ -5,10 +5,12 @@
 #include <concepts>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <memory>
 #include <ranges>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -227,7 +229,8 @@ namespace argon::detail {
             }
             return std::format("expected a {}", TypeDisplayName<T>::value);
         }
-    public:
+
+    protected:
         auto convert(std::string_view value) -> std::expected<T, std::string> {
             std::optional<T> result;
             // Use custom conversion function for this specific option if supplied
@@ -251,7 +254,9 @@ namespace argon::detail {
                 result = parse_char(value);
             }
             // Parse as a string
-            else if constexpr (std::is_same_v<T, std::string>) {
+            else if constexpr (
+                std::is_same_v<T, std::string> ||
+                std::is_same_v<T, std::filesystem::path>) {
                 result = value;
             }
             // Should never reach this
@@ -413,6 +418,53 @@ namespace argon::detail {
 
 
 namespace argon::detail {
+    template <typename T>
+    [[nodiscard]] static auto get_default_input_hint() -> std::string {
+        if constexpr (detail::is_argon_integral_v<T> || std::is_floating_point_v<T>) return "num";
+        else if constexpr (std::is_same_v<T, bool>) return "bool";
+        else if constexpr (std::is_same_v<T, char>) return "char";
+        else if constexpr (std::is_same_v<T, std::string>) return "string";
+        else if constexpr (std::is_same_v<T, std::filesystem::path>) return "path";
+        else return "value";
+    }
+
+    template <typename Derived, typename T>
+    class InputHintMixin {
+    protected:
+        std::string m_inputHint = get_default_input_hint<T>();
+
+    public:
+        auto with_input_hint(const std::string_view inputHint) & -> Derived& {
+            m_inputHint = inputHint;
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_input_hint(const std::string_view inputHint) && -> Derived&& {
+            m_inputHint = inputHint;
+            return static_cast<Derived&&>(*this);
+        }
+    };
+
+    template <typename Derived>
+    class DescriptionMixin {
+    protected:
+        std::string m_description;
+
+    public:
+        auto with_description(const std::string_view description) & -> Derived& {
+            m_description = description;
+            return static_cast<Derived&>(*this);
+        }
+
+        auto with_description(const std::string_view description) && -> Derived&& {
+            m_description = description;
+            return static_cast<Derived&&>(*this);
+        }
+    };
+} // namespace argon::detail
+
+
+namespace argon::detail {
     class FlagBase {
         friend class AstAnalyzer;
 
@@ -434,6 +486,8 @@ namespace argon::detail {
 
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
         [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_input_hint() const -> const std::string& = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 
     class MultiFlagBase {
@@ -458,39 +512,51 @@ namespace argon::detail {
 
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
         [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_input_hint() const -> const std::string& = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 
     class PositionalBase {
         friend class AstAnalyzer;
 
     protected:
-        std::optional<std::string> m_name;
+        std::string m_name;
 
         [[nodiscard]] virtual auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> = 0;
     public:
-        PositionalBase() = default;
-        explicit PositionalBase(const std::string_view name) : m_name(name) {}
+        explicit PositionalBase(const std::string_view name) {
+            if (name.empty()) {
+                throw std::invalid_argument("Positional name must not be empty");
+            }
+            m_name = name;
+        }
         virtual ~PositionalBase() = default;
 
-        [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
+        [[nodiscard]] auto get_name() const -> const std::string& { return m_name; }
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 
     class MultiPositionalBase {
         friend class AstAnalyzer;
 
     protected:
-        std::optional<std::string> m_name;
+        std::string m_name;
 
         [[nodiscard]] virtual auto set_value(std::span<const std::string_view> values)
             -> std::expected<void, std::vector<std::string>> = 0;
     public:
-        MultiPositionalBase() = default;
-        explicit MultiPositionalBase(const std::string_view name) : m_name(name) {}
+        explicit MultiPositionalBase(const std::string_view name) {
+            if (name.empty()) {
+                throw std::invalid_argument("Multi-positional name must not be empty");
+            }
+            m_name = name;
+        }
         virtual ~MultiPositionalBase() = default;
 
-        [[nodiscard]] auto get_name() const -> const std::optional<std::string>& { return m_name; }
+        [[nodiscard]] auto get_name() const -> const std::string& { return m_name; }
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 
     class ChoiceBase {
@@ -514,6 +580,8 @@ namespace argon::detail {
 
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
         [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_choices() const -> std::vector<std::string> = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 
     class MultiChoiceBase {
@@ -538,6 +606,8 @@ namespace argon::detail {
 
         [[nodiscard]] virtual auto is_set() const -> bool = 0;
         [[nodiscard]] virtual auto is_implicit_set() const -> bool = 0;
+        [[nodiscard]] virtual auto get_choices() const -> std::vector<std::string> = 0;
+        [[nodiscard]] virtual auto get_description() const -> const std::string& = 0;
     };
 } // namespace argon::detail
 
@@ -548,7 +618,9 @@ namespace argon {
             : public detail::FlagBase,
               public detail::SingleValueStorage<Flag<T>, T>,
               public detail::Converter<Flag<T>, T>,
-              public detail::ValueValidatorMixin<Flag<T>, T> {
+              public detail::ValueValidatorMixin<Flag<T>, T>,
+              public detail::InputHintMixin<Flag<T>, T>,
+              public detail::DescriptionMixin<Flag<T>> {
         std::optional<T> m_implicitValue;
 
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string> override {
@@ -595,6 +667,21 @@ namespace argon {
             return {};
         }
 
+        [[nodiscard]] auto is_set() const -> bool override {
+            return this->m_valueStorage.has_value();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
+        }
+
+        [[nodiscard]] auto get_input_hint() const -> const std::string& override {
+            return this->m_inputHint;
+        }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
+        }
     public:
         explicit Flag(const std::string_view flag) : FlagBase(flag) {}
 
@@ -623,14 +710,6 @@ namespace argon {
             m_implicitValue = std::move(implicitValue);
             return std::move(*this);
         }
-
-        [[nodiscard]] auto is_set() const -> bool override {
-            return this->m_valueStorage.has_value();
-        }
-
-        [[nodiscard]] auto is_implicit_set() const -> bool override {
-            return m_implicitValue.has_value();
-        }
     };
 
     template <typename T>
@@ -639,7 +718,9 @@ namespace argon {
               public detail::VectorValueStorage<MultiFlag<T>, T>,
               public detail::Converter<MultiFlag<T>, T>,
               public detail::ValueValidatorMixin<MultiFlag<T>, T>,
-              public detail::GroupValidatorMixin<MultiFlag<T>, T> {
+              public detail::GroupValidatorMixin<MultiFlag<T>, T>,
+              public detail::InputHintMixin<MultiFlag<T>, T>,
+              public detail::DescriptionMixin<MultiFlag<T>> {
         std::optional<std::vector<T>> m_implicitValue;
 
         auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>> override {
@@ -701,6 +782,21 @@ namespace argon {
             return {};
         }
 
+        [[nodiscard]] auto is_set() const -> bool override {
+            return !this->m_valueStorage.empty();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
+        }
+
+        [[nodiscard]] auto get_input_hint() const -> const std::string& override {
+            return this->m_inputHint;
+        }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
+        }
     public:
         explicit MultiFlag(const std::string_view flag) : MultiFlagBase(flag) {}
 
@@ -729,14 +825,6 @@ namespace argon {
             m_implicitValue = std::move(implicitValue);
             return std::move(*this);
         }
-
-        [[nodiscard]] auto is_set() const -> bool override {
-            return !this->m_valueStorage.empty();
-        }
-
-        [[nodiscard]] auto is_implicit_set() const -> bool override {
-            return m_implicitValue.has_value();
-        }
     };
 
     template <typename T>
@@ -744,55 +832,45 @@ namespace argon {
             : public detail::PositionalBase,
               public detail::SingleValueStorage<Positional<T>, T>,
               public detail::Converter<Positional<T>, T> ,
-              public detail::ValueValidatorMixin<Positional<T>, T> {
+              public detail::ValueValidatorMixin<Positional<T>, T> ,
+              public detail::DescriptionMixin<Positional<T>> {
         auto set_value(std::optional<const std::string_view> str) -> std::expected<void, std::string>  override {
             if (this->m_defaultValue.has_value()) {
                 auto res = this->apply_value_validator(this->m_defaultValue.value());
                 if (!res) {
-                    if (const auto name = this->get_name(); name.has_value()) {
-                        throw std::logic_error(std::format(
-                            "Default value for positional '{}' does not meet the validation requirement: {}",
-                            name.value(), res.error()));
-                    }
                     throw std::logic_error(std::format(
-                        "Default value for positional does not meet the validation requirement: {}", res.error()));
+                        "Default value for positional '{}' does not meet the validation requirement: {}",
+                        this->get_name(), res.error()));
                 }
             }
 
             auto result = this->convert(str.value());
             if (!result) {
-                if (const auto name = this->get_name(); name.has_value()) {
-                    return std::unexpected(std::format(
-                        "Invalid value '{}' for '{}': {}",
-                        str.value(), name.value(), result.error()));
-                }
                 return std::unexpected(std::format(
-                    "Invalid value '{}' for positional argument: {}",
-                    str.value(), result.error()));
+                    "Invalid value '{}' for '{}': {}",
+                    str.value(), this->get_name(), result.error()));
             }
             this->m_valueStorage = result.value();
 
             auto validate = this->apply_value_validator(this->m_valueStorage.value());
             if (!validate.has_value()) {
-                if (const auto name = this->get_name(); name.has_value()) {
-                    return std::unexpected(std::format(
-                        "Invalid value '{}' for '{}': {}",
-                        str.value(), name.value(), validate.error()));
-                }
                 return std::unexpected(std::format(
-                    "Invalid value '{}' for positional argument: {}",
-                    str.value(), validate.error()));
+                    "Invalid value '{}' for '{}': {}",
+                    str.value(), this->get_name(), validate.error()));
             }
             return {};
         }
 
-    public:
-        Positional() = default;
-        explicit Positional(const std::string_view name) : PositionalBase(name) {}
-
         [[nodiscard]] auto is_set() const -> bool override {
             return this->m_valueStorage.has_value();
         }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
+        }
+
+    public:
+        explicit Positional(const std::string_view name) : PositionalBase(name) {}
     };
 
     template <typename T>
@@ -801,18 +879,15 @@ namespace argon {
               public detail::VectorValueStorage<MultiPositional<T>, T>,
               public detail::Converter<MultiPositional<T>, T>,
               public detail::ValueValidatorMixin<MultiPositional<T>, T>,
-              public detail::GroupValidatorMixin<MultiPositional<T>, T> {
+              public detail::GroupValidatorMixin<MultiPositional<T>, T>,
+              public detail::DescriptionMixin<MultiPositional<T>> {
         auto set_value(const std::span<const std::string_view> values) -> std::expected<void, std::vector<std::string>>  override {
             if (this->m_defaultValue.has_value()) {
                 auto res = this->apply_group_validator(this->m_defaultValue.value());
                 if (!res) {
-                    if (const auto name = this->get_name(); name.has_value()) {
-                        throw std::logic_error(std::format(
-                            "Default value for '{}' does not meet the validation requirement: {}",
-                            name.value(), res.error()));
-                    }
                     throw std::logic_error(std::format(
-                        "Default value for multi-positional does not meet the validation requirement: {}", res.error()));
+                        "Default value for '{}' does not meet the validation requirement: {}",
+                        this->get_name(), res.error()));
                 }
             }
 
@@ -820,40 +895,24 @@ namespace argon {
             for (const auto& value : values) {
                 auto result = this->convert(value);
                 if (!result.has_value()) {
-                    if (const auto name = this->get_name(); name.has_value()) {
-                        errors.emplace_back(std::format(
-                            "Invalid value '{}' for '{}': {}",
-                            result.value(), name.value(), result.error()));
-                    } else {
-                        errors.emplace_back(std::format(
-                            "Invalid value '{}' for multi-positional: {}",
-                            result.value(), result.error()));
-                    }
+                    errors.emplace_back(std::format(
+                        "Invalid value '{}' for '{}': {}",
+                        result.value(), this->get_name(), result.error()));
                     continue;
                 }
 
                 auto validate = this->apply_value_validator(result.value());
                 if (!validate.has_value()) {
-                    if (const auto name = this->get_name(); name.has_value()) {
-                        errors.emplace_back(std::format(
-                            "Invalid value '{}' for '{}': {}",
-                            result.value(), name.value(), validate.error()));
-                    } else {
-                        errors.emplace_back(std::format(
-                            "Invalid value '{}' for multi-positional argument: {}",
-                            result.value(), validate.error()));
-                    }
+                    errors.emplace_back(std::format(
+                        "Invalid value '{}' for '{}': {}",
+                        result.value(), this->get_name(), validate.error()));
                 }
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
 
             auto validate = this->apply_group_validator(this->m_valueStorage);
             if (!validate.has_value()) {
-                if (const auto name = this->get_name(); name.has_value()) {
-                    errors.emplace_back(std::format("Invalid values for '{}': {}", name.value(), validate.error()));
-                } else {
-                    errors.emplace_back(std::format("Invalid values for multi-positional argument: {}", validate.error()));
-                }
+                errors.emplace_back(std::format("Invalid values for '{}': {}", this->get_name(), validate.error()));
             }
 
             if (!errors.empty()) {
@@ -862,19 +921,23 @@ namespace argon {
             return {};
         }
 
-    public:
-        MultiPositional() = default;
-        explicit MultiPositional(const std::string_view name) : MultiPositionalBase(name) {}
-
         [[nodiscard]] auto is_set() const -> bool override {
             return !this->m_valueStorage.empty();
         }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
+        }
+
+    public:
+        explicit MultiPositional(const std::string_view name) : MultiPositionalBase(name) {}
     };
 
     template <typename T>
     class Choice final
             : public detail::ChoiceBase,
-              public detail::SingleValueStorage<Choice<T>, T> {
+              public detail::SingleValueStorage<Choice<T>, T>,
+              public detail::DescriptionMixin<Choice<T>> {
         std::vector<std::pair<std::string, T>> m_choices;
         std::optional<T> m_implicitValue;
 
@@ -905,6 +968,22 @@ namespace argon {
             }
             this->m_valueStorage = it->second;
             return {};
+        }
+
+        [[nodiscard]] auto is_set() const -> bool override {
+            return this->m_valueStorage.has_value();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
+        }
+
+        [[nodiscard]] auto get_choices() const -> std::vector<std::string> override {
+            return m_choices | std::views::keys | std::ranges::to<std::vector>();
+        }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
         }
 
     public:
@@ -940,21 +1019,14 @@ namespace argon {
             m_implicitValue = std::move(implicitValue);
             return std::move(*this);
         }
-
-        [[nodiscard]] auto is_set() const -> bool override {
-            return this->m_valueStorage.has_value();
-        }
-
-        [[nodiscard]] auto is_implicit_set() const -> bool override {
-            return m_implicitValue.has_value();
-        }
     };
 
     template <typename T>
     class MultiChoice final
             : public detail::MultiChoiceBase,
               public detail::VectorValueStorage<MultiChoice<T>, T>,
-              public detail::GroupValidatorMixin<MultiChoice<T>, T> {
+              public detail::GroupValidatorMixin<MultiChoice<T>, T>,
+              public detail::DescriptionMixin<MultiChoice<T>> {
         std::vector<std::pair<std::string, T>> m_choices;
         std::optional<std::vector<T>> m_implicitValue;
 
@@ -1019,6 +1091,22 @@ namespace argon {
             return {};
         }
 
+        [[nodiscard]] auto is_set() const -> bool override {
+            return !this->m_valueStorage.empty();
+        }
+
+        [[nodiscard]] auto is_implicit_set() const -> bool override {
+            return m_implicitValue.has_value();
+        }
+
+        [[nodiscard]] auto get_choices() const -> std::vector<std::string> override {
+            return m_choices | std::views::keys | std::ranges::to<std::vector>();
+        }
+
+        [[nodiscard]] auto get_description() const -> const std::string& override {
+            return this->m_description;
+        }
+
     public:
         MultiChoice(const std::string_view flag, std::vector<std::pair<std::string, T>> choices) : MultiChoiceBase(flag) {
             if (choices.empty()) {
@@ -1052,14 +1140,6 @@ namespace argon {
         auto with_implicit(std::vector<T> implicitValue) && -> MultiChoice&& {
             m_implicitValue = std::move(implicitValue);
             return std::move(*this);
-        }
-
-        [[nodiscard]] auto is_set() const -> bool override {
-            return !this->m_valueStorage.empty();
-        }
-
-        [[nodiscard]] auto is_implicit_set() const -> bool override {
-            return m_implicitValue.has_value();
         }
     };
  } // namespace argon::detail
@@ -1109,6 +1189,18 @@ struct std::hash<argon::detail::UniqueId> {
 };
 
 namespace argon::detail {
+    enum class FlagKind {
+        Flag,
+        MultiFlag,
+        Choice,
+        MultiChoice,
+    };
+
+    struct FlagOrderEntry {
+        FlagKind kind = FlagKind::Flag;
+        UniqueId id = {};
+    };
+
     class Context {
         std::unordered_map<UniqueId, Polymorphic<FlagBase>> m_flags;
         std::unordered_map<UniqueId, Polymorphic<MultiFlagBase>> m_multiFlags;
@@ -1117,6 +1209,7 @@ namespace argon::detail {
         std::optional<std::pair<UniqueId, Polymorphic<MultiPositionalBase>>> m_multiPositional;
         std::unordered_map<UniqueId, Polymorphic<ChoiceBase>> m_choices;
         std::unordered_map<UniqueId, Polymorphic<MultiChoiceBase>> m_multiChoices;
+        std::vector<FlagOrderEntry> m_insertionOrder;
 
         template <typename T>
         [[nodiscard]] auto flag_or_alias_exists(const T& flag) const -> std::optional<std::string> {
@@ -1142,6 +1235,7 @@ namespace argon::detail {
             }
             FlagHandle<T> handle{};
             m_flags.emplace(handle.get_id(), detail::make_polymorphic<FlagBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::Flag, handle.get_id());
             return handle;
         }
 
@@ -1153,6 +1247,7 @@ namespace argon::detail {
             }
             MultiFlagHandle<T> handle{};
             m_multiFlags.emplace(handle.get_id(), detail::make_polymorphic<MultiFlagBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::MultiFlag, handle.get_id());
             return handle;
         }
 
@@ -1186,6 +1281,7 @@ namespace argon::detail {
             }
             ChoiceHandle<T> handle{};
             m_choices.emplace(handle.get_id(), detail::make_polymorphic<ChoiceBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::Choice, handle.get_id());
             return handle;
         }
 
@@ -1197,6 +1293,7 @@ namespace argon::detail {
             }
             MultiChoiceHandle<T> handle{};
             m_multiChoices.emplace(handle.get_id(), detail::make_polymorphic<MultiChoiceBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::MultiChoice, handle.get_id());
             return handle;
         }
 
@@ -1269,6 +1366,11 @@ namespace argon::detail {
             return m_positionals.at(m_positionalOrder[index]).get();
         }
 
+        [[nodiscard]] auto get_positional(const size_t index) const -> const PositionalBase * {
+            if (index >= m_positionalOrder.size()) return nullptr;
+            return m_positionals.at(m_positionalOrder[index]).get();
+        }
+
         [[nodiscard]] auto get_num_positionals() const -> size_t {
             return m_positionals.size();
         }
@@ -1334,6 +1436,284 @@ namespace argon::detail {
 
         [[nodiscard]] auto get_multi_choices() const -> const std::unordered_map<UniqueId, Polymorphic<MultiChoiceBase>>& {
             return m_multiChoices;
+        }
+
+        [[nodiscard]] auto get_insertion_order() const -> const std::vector<FlagOrderEntry>& {
+            return m_insertionOrder;
+        }
+    };
+} // namespace argon::detail
+
+
+namespace argon::detail {
+    class HelpMessageBuilder {
+        constexpr static size_t maxLineWidth = 80;
+        constexpr static size_t maxDescriptionColumn = 32;
+        constexpr static size_t groupNameColumn = 2;
+        constexpr static size_t usageColumn = 4;
+        constexpr static size_t bufferBetweenUsageAndDesc = 2;
+
+        [[nodiscard]] static auto accumulate_flag_and_aliases(
+            const std::string& flagName,
+            const std::vector<std::string>& aliases
+        ) -> std::string {
+            return std::ranges::fold_left(aliases, flagName,
+                [](std::string acc, const std::string& alias) {
+                    acc += ", " + alias;
+                    return acc;
+                }
+            );
+        }
+
+        [[nodiscard]] static auto accumulate_choices(const std::vector<std::string>& choices) -> std::string {
+            return std::ranges::fold_left(choices | std::views::drop(1), choices.at(0),
+                [](std::string acc, const std::string& choice) {
+                    acc += "|" + choice;
+                    return acc;
+                }
+            );
+        }
+
+        [[nodiscard]] static auto get_flag_usage(const FlagBase *flag) -> std::string {
+            std::string names = accumulate_flag_and_aliases(flag->get_flag(), flag->get_aliases());
+            names += " ";
+            names += flag->is_implicit_set() ? "[<" : "<";
+            names += flag->get_input_hint();
+            names += flag->is_implicit_set() ? ">]" : ">";
+            return names;
+        }
+
+        [[nodiscard]] static auto get_multi_flag_usage(const MultiFlagBase *flag) -> std::string {
+            std::string names = accumulate_flag_and_aliases(flag->get_flag(), flag->get_aliases());
+            names += " ";
+            if (flag->is_implicit_set()) names += "[";
+            names += "<";
+            names += flag->get_input_hint();
+            names += ">...";
+            if (flag->is_implicit_set()) names += "]";
+            return names;
+        }
+
+        [[nodiscard]] static auto get_choice_usage(const ChoiceBase *choice) -> std::string {
+            std::string names = accumulate_flag_and_aliases(choice->get_flag(), choice->get_aliases());
+            names += " ";
+            names += choice->is_implicit_set() ? "[<" : "<";
+            names += accumulate_choices(choice->get_choices());
+            names += choice->is_implicit_set() ? ">]" : ">";
+            return names;
+        }
+
+        [[nodiscard]] static auto get_multi_choice_usage(const MultiChoiceBase *choice) -> std::string {
+            std::string names = accumulate_flag_and_aliases(choice->get_flag(), choice->get_aliases());
+            names += " ";
+            if (choice->is_implicit_set()) names += "[";
+            names += "<";
+            names += accumulate_choices(choice->get_choices());
+            names += ">...";
+            if (choice->is_implicit_set()) names += "]";
+            return names;
+        }
+
+        [[nodiscard]] static auto get_option_usage_messages(const Context& context) -> std::vector<std::string> {
+            std::vector<std::string> usages;
+
+            for (const auto& [kind, id] : context.get_insertion_order()) {
+                switch (kind) {
+                    case FlagKind::Flag: {
+                        usages.emplace_back(get_flag_usage(context.get_flags().at(id).get()));
+                    } break;
+                    case FlagKind::MultiFlag: {
+                        usages.emplace_back(get_multi_flag_usage(context.get_multi_flags().at(id).get()));
+                    } break;
+                    case FlagKind::Choice: {
+                        usages.emplace_back(get_choice_usage(context.get_choices().at(id).get()));
+                    } break;
+                    case FlagKind::MultiChoice: {
+                        usages.emplace_back(get_multi_choice_usage(context.get_multi_choices().at(id).get()));
+                    } break;
+                }
+            }
+            return usages;
+        }
+
+        [[nodiscard]] static auto wrap_description(
+            const std::string_view desc,
+            const size_t wrapWidth
+        ) -> std::vector<std::string> {
+            std::vector<std::string> result;
+            size_t pos = 0;
+
+            while (pos < desc.size()) {
+                while (pos < desc.size() && isspace(desc[pos])) ++pos;
+                if (desc.substr(pos).empty()) return result;
+
+                size_t end = std::min(pos + wrapWidth, desc.size());
+                if (end < desc.size()) {
+                    const size_t lastSpace = desc.rfind(' ', end);
+                    if (lastSpace != std::string::npos && lastSpace > pos) {
+                        end = lastSpace;
+                    }
+                }
+
+                result.emplace_back(desc.substr(pos, end - pos));
+                pos = end;
+            }
+
+            return result;
+        }
+
+        [[nodiscard]] static auto get_option_descriptions(
+            const Context& context,
+            const size_t wrapWidth
+        ) -> std::vector<std::vector<std::string>> {
+            std::vector<std::vector<std::string>> descriptions;
+
+            for (const auto& [kind, id] : context.get_insertion_order()) {
+                switch (kind) {
+                    case FlagKind::Flag: {
+                        descriptions.emplace_back(wrap_description(context.get_flags().at(id)->get_description(), wrapWidth));
+                    } break;
+                    case FlagKind::MultiFlag: {
+                        descriptions.emplace_back(wrap_description(context.get_multi_flags().at(id)->get_description(), wrapWidth));
+                    } break;
+                    case FlagKind::Choice: {
+                        descriptions.emplace_back(wrap_description(context.get_choices().at(id)->get_description(), wrapWidth));
+                    } break;
+                    case FlagKind::MultiChoice: {
+                        descriptions.emplace_back(wrap_description(context.get_multi_choices().at(id)->get_description(), wrapWidth));
+                    } break;
+                }
+            }
+            return descriptions;
+        }
+
+        [[nodiscard]] static auto get_positional_usage_messages(const Context& context) -> std::vector<std::string> {
+            std::vector<std::string> usages;
+            for (size_t i = 0; i < context.get_num_positionals(); ++i) {
+                const PositionalBase *pos = context.get_positional(i);
+                usages.emplace_back(std::format("<{}>", pos->get_name()));
+            }
+            if (const auto multiPos = context.get_multi_positional_ptr()) {
+                usages.emplace_back(std::format("<{}>...", multiPos->get_name()));
+            }
+            return usages;
+        }
+
+        [[nodiscard]] static auto get_positional_descriptions(
+            const Context& context,
+            const size_t wrapWidth
+        ) -> std::vector<std::vector<std::string>> {
+            std::vector<std::vector<std::string>> descriptions;
+            for (size_t i = 0; i < context.get_num_positionals(); i++) {
+                descriptions.emplace_back(wrap_description(context.get_positional(i)->get_description(), wrapWidth));
+            }
+            if (const auto multiPos = context.get_multi_positional_ptr()) {
+                descriptions.emplace_back(wrap_description(multiPos->get_description(), wrapWidth));
+            }
+            return descriptions;
+        }
+
+    public:
+        [[nodiscard]] static auto build(
+            const Context& context,
+            const std::string_view programName,
+            const std::string_view programDescription
+        ) -> std::string {
+            std::ostringstream msg;
+
+            const auto& optionOrders = context.get_insertion_order();
+            const auto optionUsageMessages = get_option_usage_messages(context);
+            const auto positionalUsageMessages = get_positional_usage_messages(context);
+
+            msg << std::format("Usage: {} ", programName);
+            if (!optionOrders.empty()) {
+                msg << "[options]";
+            }
+            for (const auto& posUsage : positionalUsageMessages) {
+                msg << " " << posUsage;
+            }
+
+            bool prevSectionSet = false;
+            if (!programDescription.empty()) {
+                msg << "\nDescription:\n";
+                const auto wrapped = wrap_description(programDescription, maxLineWidth - usageColumn);
+                for (const auto& str : wrapped) {
+                    msg << std::string(usageColumn, ' ') << str << "\n";
+                }
+                prevSectionSet = true;
+            }
+
+            const size_t maxOptionUsageLen = optionUsageMessages.empty() ? 0 :
+                std::ranges::max(optionUsageMessages | std::views::transform([](const auto& str) { return str.size(); }));
+            const size_t maxPositionalUsageLen = positionalUsageMessages.empty() ? 0 :
+                std::ranges::max(positionalUsageMessages | std::views::transform([](const auto& str) { return str.size(); }));
+            const size_t maxUsageLen = std::max(maxOptionUsageLen, maxPositionalUsageLen);
+
+            const size_t descCol = std::min(maxDescriptionColumn, maxUsageLen + usageColumn + bufferBetweenUsageAndDesc);
+            const size_t descriptionWrapWidth = maxLineWidth - descCol;
+
+            const auto optionDescriptions = get_option_descriptions(context, descriptionWrapWidth);
+            const auto positionalDescriptions = get_positional_descriptions(context, descriptionWrapWidth);
+
+            if (!optionOrders.empty()) {
+                if (prevSectionSet) {
+                    msg << "\n";
+                }
+
+                msg << "Options:\n";
+                for (size_t i = 0; i < optionOrders.size(); i++) {
+                    const auto& usage = optionUsageMessages[i];
+                    const auto& desc = optionDescriptions[i];
+
+                    msg << std::string(usageColumn, ' ') << usage << std::string(bufferBetweenUsageAndDesc, ' ');
+                    if (desc.empty()) {
+                        msg << "\n";
+                        continue;
+                    }
+
+                    if (usageColumn + usage.size() + bufferBetweenUsageAndDesc > descCol) {
+                        msg << "\n";
+                        msg << std::string(descCol, ' ') << desc.at(0) << "\n";
+                    } else {
+                        msg << std::string(descCol - (usageColumn + usage.size() + bufferBetweenUsageAndDesc) , ' ');
+                        msg << desc.at(0) << "\n";
+                    }
+                    for (const auto& str : desc | std::views::drop(1)) {
+                        msg << std::string(descCol, ' ') << str << "\n";
+                    }
+                }
+                prevSectionSet = true;
+            }
+
+            if (!positionalUsageMessages.empty()) {
+                if (prevSectionSet) {
+                    msg << "\n";
+                }
+
+                msg << "Positionals:\n";
+                for (size_t i = 0; i < positionalUsageMessages.size(); i++) {
+                    const auto& usage = positionalUsageMessages[i];
+                    const auto& desc = positionalDescriptions[i];
+
+                    msg << std::string(usageColumn, ' ') << usage << std::string(bufferBetweenUsageAndDesc, ' ');
+                    if (desc.empty()) {
+                        msg << "\n";
+                        continue;
+                    }
+
+                    if (usageColumn + usage.size() + bufferBetweenUsageAndDesc > descCol) {
+                        msg << "\n";
+                        msg << std::string(descCol, ' ') << desc.at(0) << "\n";
+                    } else {
+                        msg << std::string(descCol - (usageColumn + usage.size() + bufferBetweenUsageAndDesc) , ' ');
+                        msg << desc.at(0) << "\n";
+                    }
+                    for (const auto& str : desc | std::views::drop(1)) {
+                        msg << std::string(descCol, ' ') << str << "\n";
+                    }
+                }
+            }
+            return msg.str();
         }
     };
 } // namespace argon::detail
@@ -1812,6 +2192,7 @@ namespace argon::detail {
             std::vector<AnalysisError>& errors,
             Context& context
         ) -> void {
+            if (multiPositional.values.empty()) return;
             const auto multiPos = context.get_multi_positional_ptr();
             if (!multiPos) return;
             const auto values = to_string_views(multiPositional.values);
@@ -2096,61 +2477,81 @@ namespace argon::detail {
 
 namespace argon {
     class Command {
-    public:
-        std::string name;
-        detail::Context context;
+        friend class Cli;
 
-        explicit Command(const std::string_view name_) : name(name_) {}
+        std::string m_name;
+        detail::Context m_context;
+    public:
+
+        explicit Command(const std::string_view name) : m_name(name) {}
 
         template <typename T>
         [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
-            return context.add_flag(std::move(flag));
+            return m_context.add_flag(std::move(flag));
         }
 
         template <typename T>
         [[nodiscard]] auto add_multi_flag(MultiFlag<T> flag) -> MultiFlagHandle<T> {
-            return context.add_multi_flag(std::move(flag));
+            return m_context.add_multi_flag(std::move(flag));
         }
 
         template <typename T>
         [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
-            return context.add_positional(std::move(positional));
+            return m_context.add_positional(std::move(positional));
         }
 
         template <typename T>
         [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<T> {
-            return context.add_multi_positional(std::move(positional));
+            return m_context.add_multi_positional(std::move(positional));
         }
 
         template <typename T>
         [[nodiscard]] auto add_choice(Choice<T> choice) -> ChoiceHandle<T> {
-            return context.add_choice(std::move(choice));
+            return m_context.add_choice(std::move(choice));
         }
 
         template <typename T>
         [[nodiscard]] auto add_multi_choice(MultiChoice<T> choice) -> MultiChoiceHandle<T> {
-            return context.add_multi_choice(std::move(choice));
+            return m_context.add_multi_choice(std::move(choice));
         }
     };
 
     class Cli {
+        Command m_root;
+        Constraints m_constraints;
+        std::string m_programName = "program";
+        std::string m_programDescription;
     public:
-        Command root;
-        Constraints constraints;
 
-        explicit Cli(Command root_) : root(std::move(root_)) {}
-        explicit Cli(Command root_, Constraints constraints_) : root(std::move(root_)), constraints(std::move(constraints_)) {}
+        explicit Cli(Command root_) : m_root(std::move(root_)) {}
+        explicit Cli(Command root_, Constraints constraints_) : m_root(std::move(root_)), m_constraints(std::move(constraints_)) {}
+
+        auto with_program_description(const std::string_view desc) & -> Cli& {
+            m_programDescription = desc;
+            return *this;
+        }
+
+        auto with_program_description(const std::string_view desc) && -> Cli&& {
+            m_programDescription = desc;
+            return std::move(*this);
+        }
+
+        [[nodiscard]] auto get_help_message() const -> std::string {
+            return detail::HelpMessageBuilder::build(m_root.m_context, m_programName, m_programDescription);
+        }
 
         [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
-            auto ast = detail::AstBuilder::build(argc, argv, root.context);
+            m_programName = std::filesystem::path(argv[0]).filename().string();
+
+            auto ast = detail::AstBuilder::build(argc, argv, m_root.m_context);
             if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
 
-            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), root.context); !analysisSuccess) {
+            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), m_root.m_context); !analysisSuccess) {
                 return std::unexpected(std::move(analysisSuccess.error()));
             }
 
-            Results results{root.context};
-            if (auto constraintSuccess = detail::ConstraintValidator::validate(constraints, results); !constraintSuccess) {
+            Results results{m_root.m_context};
+            if (auto constraintSuccess = detail::ConstraintValidator::validate(m_constraints, results); !constraintSuccess) {
                 return std::unexpected(std::move(constraintSuccess.error()));
             }
 

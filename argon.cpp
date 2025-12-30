@@ -9,18 +9,30 @@ int main(const int argc, const char *argv[]) {
     auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
     auto bye_handle   = cmd.add_flag(argon::Flag<int>("--bye").with_alias("-b"));
     auto str_handle   = cmd.add_flag(argon::Flag<std::string>("--str").with_alias("-s")
+        .with_input_hint("str")
+        .with_description("A string value")
         .with_default("default value!")
-        .with_implicit("implicit value!"));
+        .with_implicit("implicit value!")
+    );
     auto multi_char_handle = cmd.add_multi_flag(argon::MultiFlag<char>("--chars").with_alias("-c")
+        .with_description("A list of lowercase alphabetical characters")
         .with_default({'x', 'y', 'z'})
         .with_implicit({'a', 'b', 'c'})
         .with_value_validator([](const char& c) { return c >= 'a' && c <= 'z'; }, "value must be a lowercase alphabetic character")
         .with_group_validator([](const std::vector<char>& vec) { return vec.size() >= 3; }, "at least 3 values must be provided")
     );
-    auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>()
+    auto file_handle = cmd.add_flag(argon::Flag<std::filesystem::path>("--file")
+        .with_description("Filepath used for parsing. This file path will get parsed as a std::filesystem::path object. "
+                          "Additionally, the provided filepath must exist as a real path on your system. ")
+        .with_value_validator([](const std::filesystem::path& path) { return exists(path); }, "filepath must exist")
+    );
+    auto pos1_handle   = cmd.add_positional(argon::Positional<std::string>("pos1")
+        .with_description("Positional argument one")
         .with_value_validator([](const std::string& str) { return str.length() < 5; }, "string must be less than 5 characters"));
-    auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>());
-    auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>());
+    auto pos2_handle   = cmd.add_positional(argon::Positional<std::string>("pos2")
+        .with_description("Positional argument two"));
+    auto pos3_handle   = cmd.add_positional(argon::Positional<std::string>("pos3")
+        .with_description("Positional argument three"));
     auto multi_pos_handle = cmd.add_multi_positional(argon::MultiPositional<std::string>("extra positionals")
         .with_default({"hello", "world", "bye"})
         .with_value_validator([](const std::string& str) { return !str.empty() && str[0] == 'p'; }, "string must start with p")
@@ -28,34 +40,34 @@ int main(const int argc, const char *argv[]) {
     );
 
     auto str_choice_handle = cmd.add_choice(argon::Choice<std::string>("--str-choice", {
-        { "one",   "one" },
-        { "two",   "two" },
-        { "three", "three" }
-    }));
+            { "one",   "one" },
+            { "two",   "two" },
+            { "three", "three" }
+        })
+        .with_description("A choice of strings, either one two or three")
+    );
 
     auto num_choice_handle = cmd.add_multi_choice(argon::MultiChoice<int>("--num-choices", {
             { "one",   1 },
             { "two",   2 },
             { "three", 3 }
         })
+        .with_description("A choice of numbers, either one two or three")
         .with_default({4, 5, 6})
         .with_implicit({7, 8, 9})
         .with_group_validator([](const auto& vec) { return vec.size() >= 3; }, "at least 3 values must be provided")
     );
 
-    for (const auto& opt : cmd.context.get_flags() | std::views::values) {
-        std::cout << opt->get_flag() << "\n";
-        for (const auto& alias : opt->get_aliases()) {
-            std::cout << alias << "\n";
-        }
-        std::cout << "\n";
-    }
-
     argon::Constraints constraints{};
     constraints.required(bye_handle);
 
-    argon::Cli cli{cmd, constraints};
+    auto cli = argon::Cli{cmd, constraints}
+        .with_program_description("A program to test the argon library.");
     const auto results = cli.run(argc, argv);
+
+    const auto helpMsg = cli.get_help_message();
+    std::cout << helpMsg << "\n";
+
     if (!results) {
         for (const auto& error : results.error()) {
             std::cout << error << "\n";
@@ -69,6 +81,7 @@ int main(const int argc, const char *argv[]) {
     std::optional<int> bye   = results->get(bye_handle);
     std::vector<char> chars  = results->get(multi_char_handle);
     std::optional<std::string> str = results->get(str_handle);
+    std::optional<std::filesystem::path> file = results->get(file_handle);
     std::optional<std::string> pos1 = results->get(pos1_handle);
     std::optional<std::string> pos2 = results->get(pos2_handle);
     std::optional<std::string> pos3 = results->get(pos3_handle);
@@ -87,9 +100,10 @@ int main(const int argc, const char *argv[]) {
     std::cout << "World: " << (world ? world.value() : -1)     << "\n";
     std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
     std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
-    std::cout << "Pos1: "   << (pos1 ? pos1.value() : "no value") << "\n";
-    std::cout << "Pos2: "   << (pos2 ? pos2.value() : "no value") << "\n";
-    std::cout << "Pos3: "   << (pos3 ? pos3.value() : "no value") << "\n";
+    std::cout << "File: "  << (file ? file.value() : "no value") << "\n";
+    std::cout << "Pos1: "  << (pos1 ? pos1.value() : "no value") << "\n";
+    std::cout << "Pos2: "  << (pos2 ? pos2.value() : "no value") << "\n";
+    std::cout << "Pos3: "  << (pos3 ? pos3.value() : "no value") << "\n";
 
     std::cout << "Chars: ";
     for (const char c : chars) {
