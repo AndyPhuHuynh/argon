@@ -18,6 +18,8 @@
 #include <variant>
 #include <vector>
 
+#include "argon.hpp"
+
 namespace argon::detail {
     template <typename Base>
     class PolymorphicBase {
@@ -66,7 +68,6 @@ namespace argon::detail {
         }
 
         Polymorphic(Polymorphic&& other) = default;
-        Polymorphic& operator=(Polymorphic&& other) = default;
 
         template <typename BaseT, typename DerivedT> requires (std::derived_from<std::remove_cvref_t<DerivedT>, BaseT>)
         friend auto make_polymorphic(DerivedT&& value) -> Polymorphic<BaseT>;
@@ -1178,7 +1179,18 @@ namespace argon {
     template <typename T> using MultiPositionalHandle = Handle<T, detail::MultiPositionalBase>;
     template <typename T> using ChoiceHandle = Handle<T, detail::ChoiceBase>;
     template <typename T> using MultiChoiceHandle = Handle<T, detail::MultiChoiceBase>;
+
+    template <typename T>
+    struct is_handle : std::false_type {};
+
+    template <typename Value, typename Tag>
+    struct is_handle<Handle<Value, Tag>> : std::true_type {};
+
+    template <typename T>
+    concept IsHandle = is_handle<std::remove_cvref_t<T>>::value;
+
 } // namespace argon
+
 
 
 template <>
@@ -2284,6 +2296,22 @@ namespace argon {
             return it->second->get();
         }
 
+        [[nodiscard]] auto get_positional_base(const detail::UniqueId id) const -> const detail::PositionalBase * {
+            const auto it = m_positionals.find(id);
+            if (it == m_positionals.end()) {
+                throw std::invalid_argument("Invalid positional handle: no positional handle with this ID exists");
+            }
+            return it->second->get();
+        }
+
+        [[nodiscard]] auto get_multi_positional_base(const detail::UniqueId id) const -> const detail::MultiPositionalBase * {
+            const auto it = m_multiPositionals.find(id);
+            if (it == m_multiPositionals.end()) {
+                throw std::invalid_argument("Invalid multi-positional handle: no multi-positional handle with this ID exists");
+            }
+            return it->second->get();
+        }
+
         [[nodiscard]] auto get_choice_base(const detail::UniqueId id) const -> const detail::ChoiceBase * {
             const auto it = m_choices.find(id);
             if (it == m_choices.end()) {
@@ -2309,6 +2337,18 @@ namespace argon {
         template <typename T>
         [[nodiscard]] auto is_specified(const MultiFlagHandle<T>& handle) const -> bool {
             const auto base = get_multi_flag_base(handle.get_id());
+            return base->is_set();
+        }
+
+        template <typename T>
+        [[nodiscard]] auto is_specified(const PositionalHandle<T>& handle) const -> bool {
+            const auto base = get_positional_base(handle.get_id());
+            return base->is_set();
+        }
+
+        template <typename T>
+        [[nodiscard]] auto is_specified(const MultiPositionalHandle<T>& handle) const -> bool {
+            const auto base = get_multi_positional_base(handle.get_id());
             return base->is_set();
         }
 
@@ -2362,12 +2402,8 @@ namespace argon {
 
         template <typename T>
         [[nodiscard]] auto get(const PositionalHandle<T>& handle) const -> std::optional<T> {
-            const auto it = m_positionals.find(handle.get_id());
-            if (it == m_positionals.end()) {
-                throw std::invalid_argument("Invalid positional handle: no positional handle with this ID exists");
-            }
-            const auto& base = it->second;
-            const auto value = dynamic_cast<const Positional<T>*>(base->get());
+            const auto base = get_positional_base(handle.get_id());
+            const auto value = dynamic_cast<const Positional<T>*>(base);
             if (!value) {
                 throw std::logic_error("Internal error: positional type mismatch");
             }
@@ -2378,12 +2414,8 @@ namespace argon {
 
         template <typename T>
         [[nodiscard]] auto get(const MultiPositionalHandle<T>& handle) const -> std::vector<T> {
-            const auto it = m_multiPositionals.find(handle.get_id());
-            if (it == m_multiPositionals.end()) {
-                throw std::invalid_argument("Invalid multi-positional handle: no multi-positional handle with this ID exists");
-            }
-            const auto& base = it->second;
-            const auto value = dynamic_cast<const MultiPositional<T>*>(base->get());
+            const auto base = get_multi_positional_base(handle.get_id());
+            const auto value = dynamic_cast<const MultiPositional<T>*>(base);
             if (!value) {
                 throw std::logic_error("Internal error: multi-positional type mismatch");
             }
@@ -2437,17 +2469,178 @@ namespace argon {
 } // namespace argon
 
 
+namespace argon { class Condition; }
+
+namespace argon::detail {
+    class ConditionNode {
+    public:
+        virtual ~ConditionNode() = default;
+
+        [[nodiscard]] virtual auto evaluate(const Results& results) const -> bool = 0;
+    };
+
+    template <IsHandle HandleT>
+    class PresentNode : public ConditionNode {
+        HandleT handle;
+    public:
+        explicit PresentNode(HandleT handle) : handle(handle) {};
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return results.is_specified(handle);
+        }
+    };
+
+    template <IsHandle HandleT>
+    class AbsentNode : public ConditionNode {
+        HandleT m_handle;
+    public:
+        explicit AbsentNode(HandleT handle) : m_handle(handle) {};
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return !results.is_specified(m_handle);
+        }
+    };
+
+    struct ExactlyPolicy {
+        constexpr static std::string_view name = "Exactly";
+        static auto check(const uint32_t count, const uint32_t threshold) -> bool {
+            return count == threshold;
+        }
+    };
+
+    struct AtLeastPolicy {
+        constexpr static std::string_view name = "AtLeast";
+        static auto check(const uint32_t count, const uint32_t threshold) -> bool {
+            return count >= threshold;
+        }
+    };
+
+    struct AtMostPolicy {
+        constexpr static std::string_view name = "AtMost";
+        static auto check(const uint32_t count, const uint32_t threshold) -> bool {
+            return count <= threshold;
+        }
+    };
+
+    template <typename Policy>
+    class ThresholdNode : public ConditionNode {
+        std::vector<Polymorphic<ConditionNode>> m_handles;
+        uint32_t m_threshold;
+
+    public:
+        template <IsHandle Handle, IsHandle... Handles>
+        explicit ThresholdNode(const uint32_t expectedAmount, Handle&& handle, Handles&&... handles)
+            : m_handles{ make_polymorphic<ConditionNode>(PresentNode(std::forward<Handle>(handle))),
+                         make_polymorphic<ConditionNode>(PresentNode(std::forward<Handles>(handles)))... },
+              m_threshold(expectedAmount) {
+            if (m_threshold == 0) {
+                throw std::invalid_argument(std::format("{} amount must not be zero", Policy::name));
+            }
+            if (m_threshold > m_handles.size()) {
+                throw std::invalid_argument(std::format(
+                    "{} amount '{}' must not be greater than number of provided handles '{}'",
+                    Policy::name, m_threshold, m_handles.size()));
+            }
+        }
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            uint32_t numPresent = 0;
+            for (const auto& node : m_handles) {
+                if (node->evaluate(results)) {
+                    numPresent++;
+                }
+            }
+            return Policy::check(numPresent, m_threshold);
+        }
+    };
+
+    using ExactlyNode = ThresholdNode<ExactlyPolicy>;
+    using AtLeastNode = ThresholdNode<AtLeastPolicy>;
+    using AtMostNode = ThresholdNode<AtMostPolicy>;
+}
+
+namespace argon {
+    class Condition {
+        friend class detail::ConstraintValidator;
+        template <IsHandle T>
+        friend auto present(T&& handle) -> Condition;
+
+        template <IsHandle T>
+        friend auto absent(T&& handle) -> Condition;
+
+        template <IsHandle Handle, IsHandle... Handles>
+        friend auto exactly(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+
+        template <IsHandle Handle, IsHandle... Handles>
+        friend auto at_least(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+
+        template <IsHandle Handle, IsHandle... Handles>
+        friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+
+        detail::Polymorphic<detail::ConditionNode> m_condition;
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool {
+            return m_condition->evaluate(results);
+        }
+    };
+
+    template <IsHandle HandleT>
+    [[nodiscard]] auto present(HandleT&& handle) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::PresentNode<HandleT>(
+            std::forward<HandleT>(handle)
+        ));
+        return cond;
+    }
+
+    template <IsHandle HandleT>
+    [[nodiscard]] auto absent(HandleT&& handle) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::AbsentNode<HandleT>(
+            std::forward<HandleT>(handle)
+        ));
+        return cond;
+    }
+
+    template <IsHandle Handle, IsHandle... Handles>
+    [[nodiscard]] auto exactly(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+            detail::ExactlyNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        );
+        return cond;
+    }
+
+    template <IsHandle Handle, IsHandle... Handles>
+    [[nodiscard]] auto at_least(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+            detail::AtLeastNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        );
+        return cond;
+    }
+
+    template <IsHandle Handle, IsHandle... Handles>
+    [[nodiscard]] auto at_most(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+            detail::AtMostNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        );
+        return cond;
+    }
+}
+
+
 namespace argon {
     class Constraints {
-        std::vector<detail::UniqueId> m_requiredFlags;
-
         friend class detail::ConstraintValidator;
+
+        std::vector<std::pair<Condition, std::string>> m_conditions;
     public:
         Constraints() = default;
 
-        template <typename T>
-        auto required(const FlagHandle<T>& handle) -> void {
-            m_requiredFlags.emplace_back(handle.get_id());
+        auto require(const Condition& condition, const std::string_view message) -> void {
+            m_conditions.emplace_back(condition, message);
         }
     };
 } // namespace argon
@@ -2462,9 +2655,9 @@ namespace argon::detail {
         ) -> std::expected<void, std::vector<std::string>> {
             std::vector<std::string> errors;
 
-            for (const auto& id : constraints.m_requiredFlags) {
-                if (const auto base = results.get_flag_base(id); !base->is_set()) {
-                    errors.emplace_back(std::format("Flag '{}' is required and must be set", base->get_flag()));
+            for (const auto& [condition, msg] : constraints.m_conditions) {
+                if (!condition.evaluate(results)) {
+                    errors.emplace_back(msg);
                 }
             }
 
