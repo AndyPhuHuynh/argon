@@ -2595,6 +2595,18 @@ namespace argon::detail {
             return !m_operand->evaluate(results);
         }
     };
+
+    class CustomNode : public ConditionNode {
+        std::function<bool(const Results& results)> m_evaluateFn;
+
+    public:
+        explicit CustomNode(std::function<bool(const Results& results)> evaluateFn)
+            : m_evaluateFn(std::move(evaluateFn)) {}
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return m_evaluateFn(results);
+        }
+    };
 } // namespace argon::detail
 
 
@@ -2623,6 +2635,8 @@ namespace argon {
 
         template <IsHandle Handle, IsHandle... Handles>
         friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+
+        friend auto condition(std::function<bool(const Results& results)>) -> Condition;
 
         friend auto operator&(const Condition& lhs, const Condition& rhs) -> Condition {
             Condition cond;
@@ -2690,6 +2704,14 @@ namespace argon {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
             detail::AtMostNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        );
+        return cond;
+    }
+
+    inline auto condition(std::function<bool(const Results& results)> evaluateFn) -> Condition {
+        Condition cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+            detail::CustomNode(std::move(evaluateFn))
         );
         return cond;
     }

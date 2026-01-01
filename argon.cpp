@@ -72,6 +72,12 @@ int main(const int argc, const char *argv[]) {
     // constraints.when(argon::present(bye_handle), "When --bye is specified")
     //     .require(argon::present(hello_handle), "--hello must be specified")
     //     .require(argon::absent(str_handle), "--str must NOT be specified");
+    // constraints.when(argon::present(bye_handle) & argon::present(hello_handle), "When --bye and --hello are both specified")
+    //     .require(argon::condition([&bye_handle, &hello_handle](const argon::Results& results) {
+    //         const std::optional<int> bye = results.get(bye_handle);
+    //         const std::optional<int> hello = results.get(hello_handle);
+    //         return bye.value() > hello.value();
+    //     }), "--bye must be greater than --hello");
 
     auto cli = argon::Cli{cmd, constraints}
         .with_program_description("A program to test the argon library.");
