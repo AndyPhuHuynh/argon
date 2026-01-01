@@ -898,7 +898,7 @@ namespace argon {
                 if (!result.has_value()) {
                     errors.emplace_back(std::format(
                         "Invalid value '{}' for '{}': {}",
-                        result.value(), this->get_name(), result.error()));
+                        value, this->get_name(), result.error()));
                     continue;
                 }
 
@@ -906,7 +906,7 @@ namespace argon {
                 if (!validate.has_value()) {
                     errors.emplace_back(std::format(
                         "Invalid value '{}' for '{}': {}",
-                        result.value(), this->get_name(), validate.error()));
+                        value, this->get_name(), validate.error()));
                 }
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
@@ -1173,21 +1173,29 @@ namespace argon {
         }
     };
 
-    template <typename T> using FlagHandle = Handle<T, detail::FlagBase>;
-    template <typename T> using MultiFlagHandle = Handle<T, detail::MultiFlagBase>;
-    template <typename T> using PositionalHandle = Handle<T, detail::PositionalBase>;
-    template <typename T> using MultiPositionalHandle = Handle<T, detail::MultiPositionalBase>;
-    template <typename T> using ChoiceHandle = Handle<T, detail::ChoiceBase>;
-    template <typename T> using MultiChoiceHandle = Handle<T, detail::MultiChoiceBase>;
+    template <typename T> using FlagHandle            = Handle<T, struct FlagTag>;
+    template <typename T> using MultiFlagHandle       = Handle<T, struct MultiFlagTag>;
+    template <typename T> using PositionalHandle      = Handle<T, struct PositionalTag>;
+    template <typename T> using MultiPositionalHandle = Handle<T, struct MultiPositionalTag>;
+    template <typename T> using ChoiceHandle          = Handle<T, struct ChoiceTag>;
+    template <typename T> using MultiChoiceHandle     = Handle<T, struct MultiChoiceTag>;
+    using SubcommandHandle                            = Handle<void, struct SubcommandTag>;
 
     template <typename T>
-    struct is_handle : std::false_type {};
+    struct is_argument_handle : std::false_type {};
 
     template <typename Value, typename Tag>
-    struct is_handle<Handle<Value, Tag>> : std::true_type {};
+    struct is_argument_handle<Handle<Value, Tag>> : std::bool_constant<
+        std::is_same_v<Tag, FlagTag> ||
+        std::is_same_v<Tag, MultiFlagTag> ||
+        std::is_same_v<Tag, PositionalTag> ||
+        std::is_same_v<Tag, MultiPositionalTag> ||
+        std::is_same_v<Tag, ChoiceTag> ||
+        std::is_same_v<Tag, MultiChoiceTag>
+    > {};
 
     template <typename T>
-    concept IsHandle = is_handle<std::remove_cvref_t<T>>::value;
+    concept IsArgumentHandle = is_argument_handle<std::remove_cvref_t<T>>::value;
 
 } // namespace argon
 
@@ -1732,6 +1740,34 @@ namespace argon::detail {
 
 
 namespace argon::detail {
+    class ArgvView {
+        size_t m_pos = 0;
+        std::span<const char *> m_argv;
+
+    public:
+        ArgvView(const int argc, const char **argv) : m_argv(argv, argc) {}
+
+        [[nodiscard]] auto get_pos() const -> size_t {
+            return m_pos;
+        }
+
+        [[nodiscard]] auto size() const -> size_t {
+            return m_argv.size();
+        }
+
+        [[nodiscard]] auto peek() const -> std::string_view {
+            return m_argv[m_pos];
+        }
+
+        auto next() -> std::string_view {
+            return m_argv[m_pos++];
+        }
+
+        auto operator[](const size_t i) const -> std::string_view {
+            return m_argv[i];
+        }
+    };
+
     enum class TokenKind {
         STRING,
         LEFT_BRACKET,
@@ -1742,7 +1778,7 @@ namespace argon::detail {
     struct Token {
         TokenKind kind;
         std::string image;
-        int32_t argvPosition;
+        size_t argvPosition;
     };
 
     inline auto token_kind_from_string(const std::string_view token) -> TokenKind {
@@ -1757,8 +1793,8 @@ namespace argon::detail {
         size_t m_pos = 0;
 
     public:
-        Tokenizer(const int argc, const char **argv) {
-            for (int i = 1; i < argc; i++) {
+        explicit Tokenizer(const ArgvView& argv) {
+            for (size_t i = argv.get_pos(); i < argv.size(); i++) {
                 std::string image(argv[i]);
                 Token token {
                     .kind = token_kind_from_string(image),
@@ -1795,7 +1831,7 @@ namespace argon::detail {
 
     struct AstValue {
         std::string value;
-        int32_t argvPosition;
+        size_t argvPosition;
     };
 
     struct FlagAst {
@@ -2070,11 +2106,10 @@ namespace argon::detail {
 
     public:
         [[nodiscard]] static auto build(
-            const int argc,
-            const char **argv,
+            const ArgvView& argv,
             const Context& context
         ) -> std::expected<AstContext, std::string> {
-            Tokenizer tokenizer{argc, argv};
+            Tokenizer tokenizer{argv};
             return parse_root(tokenizer, context);
         }
     };
@@ -2249,6 +2284,7 @@ namespace argon::detail { class ConstraintValidator; }
 
 namespace argon {
     class Results {
+        std::optional<detail::UniqueId> m_subcommandId;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> m_multiFlags;
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
@@ -2257,9 +2293,11 @@ namespace argon {
         std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> m_multiChoices;
 
         friend class detail::ConstraintValidator;
+        friend class Command;
         friend class Cli;
 
-        explicit Results(const detail::Context& context) {
+        explicit Results(const detail::Context& context, const std::optional<detail::UniqueId> subcommandId)
+            : m_subcommandId(subcommandId) {
             for (const auto& [id, flag] : context.get_flags()) {
                 m_flags.emplace(id, &flag);
             }
@@ -2328,6 +2366,17 @@ namespace argon {
             return it->second->get();
         }
     public:
+        [[nodiscard]] auto is_root_cmd() const -> bool {
+            return m_subcommandId == std::nullopt;
+        }
+
+        [[nodiscard]] auto is_subcommand(const SubcommandHandle& handle) const -> bool {
+            if (m_subcommandId.has_value()) {
+                return m_subcommandId.value() == handle.get_id();
+            }
+            return false;
+        }
+
         template <typename T>
         [[nodiscard]] auto is_specified(const FlagHandle<T>& handle) const -> bool {
             const auto base = get_flag_base(handle.get_id());
@@ -2479,7 +2528,7 @@ namespace argon::detail {
         [[nodiscard]] virtual auto evaluate(const Results& results) const -> bool = 0;
     };
 
-    template <IsHandle HandleT>
+    template <IsArgumentHandle HandleT>
     class PresentNode : public ConditionNode {
         HandleT handle;
     public:
@@ -2490,7 +2539,7 @@ namespace argon::detail {
         }
     };
 
-    template <IsHandle HandleT>
+    template <IsArgumentHandle HandleT>
     class AbsentNode : public ConditionNode {
         HandleT m_handle;
     public:
@@ -2528,7 +2577,7 @@ namespace argon::detail {
         uint32_t m_threshold;
 
     public:
-        template <IsHandle Handle, IsHandle... Handles>
+        template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
         explicit ThresholdNode(const uint32_t expectedAmount, Handle&& handle, Handles&&... handles)
             : m_handles{ make_polymorphic<ConditionNode>(PresentNode(std::forward<Handle>(handle))),
                          make_polymorphic<ConditionNode>(PresentNode(std::forward<Handles>(handles)))... },
@@ -2621,19 +2670,19 @@ namespace argon {
             return m_condition->evaluate(results);
         }
 
-        template <IsHandle T>
+        template <IsArgumentHandle T>
         friend auto present(T&& handle) -> Condition;
 
-        template <IsHandle T>
+        template <IsArgumentHandle T>
         friend auto absent(T&& handle) -> Condition;
 
-        template <IsHandle Handle, IsHandle... Handles>
+        template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
         friend auto exactly(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
 
-        template <IsHandle Handle, IsHandle... Handles>
+        template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
         friend auto at_least(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
 
-        template <IsHandle Handle, IsHandle... Handles>
+        template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
         friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
 
         friend auto condition(std::function<bool(const Results& results)>) -> Condition;
@@ -2663,7 +2712,7 @@ namespace argon {
         }
     };
 
-    template <IsHandle HandleT>
+    template <IsArgumentHandle HandleT>
     [[nodiscard]] auto present(HandleT&& handle) -> Condition {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::PresentNode<HandleT>(
@@ -2672,7 +2721,7 @@ namespace argon {
         return cond;
     }
 
-    template <IsHandle HandleT>
+    template <IsArgumentHandle HandleT>
     [[nodiscard]] auto absent(HandleT&& handle) -> Condition {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::AbsentNode<HandleT>(
@@ -2681,7 +2730,7 @@ namespace argon {
         return cond;
     }
 
-    template <IsHandle Handle, IsHandle... Handles>
+    template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
     [[nodiscard]] auto exactly(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
@@ -2690,7 +2739,7 @@ namespace argon {
         return cond;
     }
 
-    template <IsHandle Handle, IsHandle... Handles>
+    template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
     [[nodiscard]] auto at_least(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
@@ -2699,7 +2748,7 @@ namespace argon {
         return cond;
     }
 
-    template <IsHandle Handle, IsHandle... Handles>
+    template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
     [[nodiscard]] auto at_most(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
         Condition cond;
         cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
@@ -2807,8 +2856,35 @@ namespace argon {
 
         std::string m_name;
         detail::Context m_context;
-    public:
+        std::vector<std::pair<detail::UniqueId, Command>> m_subcommands;
+        std::vector<Constraints> m_constraints;
 
+        [[nodiscard]] auto run(
+            const detail::ArgvView& argv,
+            const std::optional<detail::UniqueId> subcommandId
+        ) -> std::expected<Results, std::vector<std::string>> {
+            auto ast = detail::AstBuilder::build(argv, m_context);
+            if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
+
+            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), m_context); !analysisSuccess) {
+                return std::unexpected(std::move(analysisSuccess.error()));
+            }
+
+            Results results{m_context, subcommandId};
+            std::vector<std::string> errors;
+            for (const auto& constraint : m_constraints) {
+                if (auto constraintSuccess = detail::ConstraintValidator::validate(constraint, results); !constraintSuccess) {
+                    errors.insert(errors.end(), constraintSuccess.error().begin(), constraintSuccess.error().end());
+                }
+            }
+            if (!errors.empty()) {
+                return std::unexpected(std::move(errors));
+            }
+
+            return results;
+        }
+
+    public:
         explicit Command(const std::string_view name) : m_name(name) {}
 
         template <typename T>
@@ -2840,17 +2916,25 @@ namespace argon {
         [[nodiscard]] auto add_multi_choice(MultiChoice<T> choice) -> MultiChoiceHandle<T> {
             return m_context.add_multi_choice(std::move(choice));
         }
+
+        [[nodiscard]] auto add_subcommand(Command subcommand) -> SubcommandHandle {
+            const SubcommandHandle handle;
+            m_subcommands.emplace_back(handle.get_id(), std::move(subcommand));
+            return handle;
+        }
+
+        auto add_constraints(Constraints constraints) -> void {
+            m_constraints.emplace_back(std::move(constraints));
+        }
     };
 
     class Cli {
         Command m_root;
-        Constraints m_constraints;
         std::string m_programName = "program";
         std::string m_programDescription;
     public:
 
         explicit Cli(Command root_) : m_root(std::move(root_)) {}
-        explicit Cli(Command root_, Constraints constraints_) : m_root(std::move(root_)), m_constraints(std::move(constraints_)) {}
 
         auto with_program_description(const std::string_view desc) & -> Cli& {
             m_programDescription = desc;
@@ -2867,21 +2951,45 @@ namespace argon {
         }
 
         [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
-            m_programName = std::filesystem::path(argv[0]).filename().string();
+            detail::ArgvView view{argc, argv};
+            m_programName = std::filesystem::path(view.next()).filename().string();
 
-            auto ast = detail::AstBuilder::build(argc, argv, m_root.m_context);
-            if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
+            Command *cmd = &m_root;
+            std::optional<detail::UniqueId> subcommandId;
+            while (true) {
+                if (cmd->m_subcommands.empty() || view.get_pos() >= view.size()) {
+                    break;
+                }
 
-            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), m_root.m_context); !analysisSuccess) {
-                return std::unexpected(std::move(analysisSuccess.error()));
+                const std::string_view token = view.peek();
+                bool subcommandFound = false;
+                for (auto& [id, subcommand] : cmd->m_subcommands) {
+                    if (token == subcommand.m_name) {
+                        subcommandFound = true;
+                        subcommandId = id;
+                        cmd = &subcommand;
+                        view.next();
+                        break;
+                    }
+                }
+                if (subcommandFound) continue;
+
+                if (detail::looks_like_flag(token)) {
+                    break;
+                }
+
+                std::string subcommands = std::ranges::fold_left(
+                    cmd->m_subcommands | std::views::values | std::views::drop(1), cmd->m_subcommands[0].second.m_name,
+                    [](const std::string& acc, const Command& subcommand) -> std::string {
+                        return acc + ", " + subcommand.m_name;
+                    }
+                );
+                return std::unexpected(std::vector{std::format(
+                    "Unknown subcommand '{}'. Valid subcommands are: {}",
+                    token, subcommands)});
             }
 
-            Results results{m_root.m_context};
-            if (auto constraintSuccess = detail::ConstraintValidator::validate(m_constraints, results); !constraintSuccess) {
-                return std::unexpected(std::move(constraintSuccess.error()));
-            }
-
-            return results;
+            return cmd->run(view, subcommandId);
         }
     };
 } // namespace argon

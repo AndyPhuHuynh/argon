@@ -2,8 +2,37 @@
 #include "argon.hpp"
 
 int main(const int argc, const char *argv[]) {
+    // -----------------------------------------
+    auto build_cmd = argon::Command("build");
+    auto threads_handle = build_cmd.add_flag(argon::Flag<int>("--threads").with_alias("-t"));
+    auto verbose_handle = build_cmd.add_flag(argon::Flag<bool>("--verbose").with_alias("-v").with_implicit(true));
+    auto timer_handle = build_cmd.add_flag(argon::Flag<float>("--timer"));
+
+    argon::Constraints build_constraints{};
+    build_constraints.when(argon::present(verbose_handle), "When --verbose is specified")
+        .require(argon::present(timer_handle), "--timer must be set");
+    build_cmd.add_constraints(build_constraints);
+
+    // -----------------------------------------
+    auto run_cmd = argon::Command("run");
+    auto speed_handle = run_cmd.add_flag(argon::Flag<int>("--speed").with_alias("-s"));
+    auto language_handle = run_cmd.add_flag(argon::Flag<std::string>("--language").with_alias("-l"));
+    auto run_files_handle = run_cmd.add_multi_positional(argon::MultiPositional<std::filesystem::path>("files"));
+
+    argon::Constraints run_constraints{};
+    run_constraints.require(argon::present(language_handle), "--language must be set");
+    run_constraints.require(argon::present(run_files_handle), "At least one file must be provided");
+    run_cmd.add_constraints(run_constraints);
+
+    // -----------------------------------------
     auto cmd = argon::Command("app");
-    auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello").with_alias("-h")
+    auto build_subcommand_handle = cmd.add_subcommand(std::move(build_cmd));
+    auto run_subcommand_handle = cmd.add_subcommand(std::move(run_cmd));
+
+    auto help_handle = cmd.add_flag(argon::Flag<bool>("--help").with_alias("-h")
+        .with_description("Display this help message")
+        .with_implicit(true));
+    auto hello_handle = cmd.add_flag(argon::Flag<int>("--hello")
         .with_implicit(2026)
         .with_value_validator([](const int& x) { return x % 2 == 0; }, "value must be even"));
     auto world_handle = cmd.add_flag(argon::Flag<int>("--world").with_alias("-w"));
@@ -69,22 +98,24 @@ int main(const int argc, const char *argv[]) {
     // constraints.require(argon::present(hello_handle) | argon::present(world_handle),
     //     "Either '--hello' or '--world' must be provided");
     // constraints.require(!argon::absent(str_handle), "Flag --str is required and must be set");
-    // constraints.when(argon::present(bye_handle), "When --bye is specified")
-    //     .require(argon::present(hello_handle), "--hello must be specified")
-    //     .require(argon::absent(str_handle), "--str must NOT be specified");
-    // constraints.when(argon::present(bye_handle) & argon::present(hello_handle), "When --bye and --hello are both specified")
-    //     .require(argon::condition([&bye_handle, &hello_handle](const argon::Results& results) {
-    //         const std::optional<int> bye = results.get(bye_handle);
-    //         const std::optional<int> hello = results.get(hello_handle);
-    //         return bye.value() > hello.value();
-    //     }), "--bye must be greater than --hello");
+    constraints.when(argon::present(bye_handle), "When --bye is specified")
+        .require(argon::present(hello_handle), "--hello must be specified")
+        .require(argon::absent(str_handle), "--str must NOT be specified");
 
-    auto cli = argon::Cli{cmd, constraints}
+    argon::Constraints constraints2{};
+    constraints2.when(argon::present(bye_handle) & argon::present(hello_handle), "When --bye and --hello are both specified")
+        .require(argon::condition([&bye_handle, &hello_handle](const argon::Results& results) {
+            const std::optional<int> bye = results.get(bye_handle);
+            const std::optional<int> hello = results.get(hello_handle);
+            return bye.value() > hello.value();
+        }), "--bye must be greater than --hello");
+
+    cmd.add_constraints(std::move(constraints));
+    cmd.add_constraints(std::move(constraints2));
+
+    auto cli = argon::Cli{cmd}
         .with_program_description("A program to test the argon library.");
     const auto results = cli.run(argc, argv);
-
-    const auto helpMsg = cli.get_help_message();
-    std::cout << helpMsg << "\n";
 
     if (!results) {
         for (const auto& error : results.error()) {
@@ -94,51 +125,79 @@ int main(const int argc, const char *argv[]) {
     }
 
     std::cout << "No errors woohoo!\n";
-    std::optional<int> hello = results->get(hello_handle);
-    std::optional<int> world = results->get(world_handle);
-    std::optional<int> bye   = results->get(bye_handle);
-    std::vector<char> chars  = results->get(multi_char_handle);
-    std::optional<std::string> str = results->get(str_handle);
-    std::optional<std::filesystem::path> file = results->get(file_handle);
-    std::optional<std::string> pos1 = results->get(pos1_handle);
-    std::optional<std::string> pos2 = results->get(pos2_handle);
-    std::optional<std::string> pos3 = results->get(pos3_handle);
-    std::vector<std::string> strings = results->get(multi_pos_handle);
-    std::optional<std::string> str_choice = results->get(str_choice_handle);
-    std::vector<int> num_choices = results->get(num_choice_handle);
+    if (results->is_root_cmd()) {
+        if (results->is_specified(help_handle)) {
+            const auto helpMsg = cli.get_help_message();
+            std::cout << helpMsg << "\n";
+            return 0;
+        }
 
-    if (!results->is_specified(str_handle)) {
-        std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
+        std::optional<int> hello = results->get(hello_handle);
+        std::optional<int> world = results->get(world_handle);
+        std::optional<int> bye   = results->get(bye_handle);
+        std::vector<char> chars  = results->get(multi_char_handle);
+        std::optional<std::string> str = results->get(str_handle);
+        std::optional<std::filesystem::path> file = results->get(file_handle);
+        std::optional<std::string> pos1 = results->get(pos1_handle);
+        std::optional<std::string> pos2 = results->get(pos2_handle);
+        std::optional<std::string> pos3 = results->get(pos3_handle);
+        std::vector<std::string> strings = results->get(multi_pos_handle);
+        std::optional<std::string> str_choice = results->get(str_choice_handle);
+        std::vector<int> num_choices = results->get(num_choice_handle);
+
+        if (!results->is_specified(str_handle)) {
+            std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
+        }
+        if (!results->is_specified(multi_char_handle)) {
+            std::cout << "Flag '--chars' was not provided. Resorting to default value of {'x', 'y', 'z'}\n";
+        }
+
+        std::cout << "Hello: " << (hello ? hello.value() : -1)     << "\n";
+        std::cout << "World: " << (world ? world.value() : -1)     << "\n";
+        std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
+        std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
+        std::cout << "File: "  << (file ? file.value() : "no value") << "\n";
+        std::cout << "Pos1: "  << (pos1 ? pos1.value() : "no value") << "\n";
+        std::cout << "Pos2: "  << (pos2 ? pos2.value() : "no value") << "\n";
+        std::cout << "Pos3: "  << (pos3 ? pos3.value() : "no value") << "\n";
+
+        std::cout << "Chars: ";
+        for (const char c : chars) {
+            std::cout << c << " ";
+        }
+        std::cout << "\n";
+
+        std::cout << "Multi positionals:\n";
+        for (const auto& s : strings) {
+            std::cout << "\t" << s << "\n";
+        }
+
+        std::cout << "Str choice: " << (str_choice ? str_choice.value() : "no value") << "\n";
+
+        std::cout << "Num choices:\n";
+        for (const auto& num : num_choices) {
+            std::cout << "\t" << num << "\n";
+        }
+    } else if (results->is_subcommand(build_subcommand_handle)) {
+        std::optional<int> threads = results->get(threads_handle);
+        std::optional<bool> verbose = results->get(verbose_handle);
+        std::optional<float> timer = results->get(timer_handle);
+
+        std::cout << "Threads " << (threads ? threads.value() : -1) << "\n";
+        std::cout << "Verbose " << (verbose ? verbose.value() : -1) << "\n";
+        std::cout << "Timer "   << (timer   ? timer.value()   : -1) << "\n";
+    } else if (results->is_subcommand(run_subcommand_handle)) {
+        std::optional<int> speed = results->get(speed_handle);
+        std::optional<std::string> language = results->get(language_handle);
+        std::vector<std::filesystem::path> files = results->get(run_files_handle);
+
+        std::cout << "Speed " << (speed ? speed.value() : -1) << "\n";
+        std::cout << "Language " << (language ? language.value() : "no value") << "\n";
+        std::cout << "Files: \n";
+        for (const auto& file : files) {
+            std::cout << "\t" << file << "\n";
+        }
     }
-    if (!results->is_specified(multi_char_handle)) {
-        std::cout << "Flag '--chars' was not provided. Resorting to default value of {'x', 'y', 'z'}\n";
-    }
 
-    std::cout << "Hello: " << (hello ? hello.value() : -1)     << "\n";
-    std::cout << "World: " << (world ? world.value() : -1)     << "\n";
-    std::cout << "Bye: "   << (bye ? bye.value() : -1)         << "\n";
-    std::cout << "Str: "   << (str ? str.value() : "no value") << "\n";
-    std::cout << "File: "  << (file ? file.value() : "no value") << "\n";
-    std::cout << "Pos1: "  << (pos1 ? pos1.value() : "no value") << "\n";
-    std::cout << "Pos2: "  << (pos2 ? pos2.value() : "no value") << "\n";
-    std::cout << "Pos3: "  << (pos3 ? pos3.value() : "no value") << "\n";
-
-    std::cout << "Chars: ";
-    for (const char c : chars) {
-        std::cout << c << " ";
-    }
-    std::cout << "\n";
-
-    std::cout << "Multi positionals:\n";
-    for (const auto& s : strings) {
-        std::cout << "\t" << s << "\n";
-    }
-
-    std::cout << "Str choice: " << (str_choice ? str_choice.value() : "no value") << "\n";
-
-    std::cout << "Num choices:\n";
-    for (const auto& num : num_choices) {
-        std::cout << "\t" << num << "\n";
-    }
     return 0;
 }
