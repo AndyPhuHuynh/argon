@@ -2600,6 +2600,7 @@ namespace argon::detail {
 
 namespace argon {
     class Condition {
+        friend class When;
         friend class detail::ConstraintValidator;
 
         detail::Polymorphic<detail::ConditionNode> m_condition;
@@ -2692,6 +2693,40 @@ namespace argon {
         );
         return cond;
     }
+
+    class When {
+        friend class Constraints;
+        friend class detail::ConstraintValidator;
+
+        std::pair<Condition, std::string> m_precondition;
+        std::vector<std::pair<Condition, std::string>> m_conditions;
+
+        When(Condition precondition, const std::string_view description)
+            : m_precondition(std::move(precondition), description) {}
+
+        [[nodiscard]] auto validate(const Results& results) const -> std::expected<void, std::vector<std::string>> {
+            if (!m_precondition.first.evaluate(results)) return {};
+            std::vector<std::string> errors;
+            for (const auto& [condition, msg] : m_conditions) {
+                if (!condition.evaluate(results)) {
+                    errors.emplace_back(std::format("{}: {}", m_precondition.second, msg));
+                }
+            }
+            if (!errors.empty()) return std::unexpected(std::move(errors));
+            return {};
+        }
+
+    public:
+        auto require(const Condition& condition, const std::string_view message) & -> When& {
+            m_conditions.emplace_back(condition, message);
+            return *this;
+        }
+
+        auto require(const Condition& condition, const std::string_view message) && -> When&& {
+            m_conditions.emplace_back(condition, message);
+            return std::move(*this);
+        }
+    };
 } // namespace argon
 
 
@@ -2700,11 +2735,17 @@ namespace argon {
         friend class detail::ConstraintValidator;
 
         std::vector<std::pair<Condition, std::string>> m_conditions;
+        std::vector<When> m_whens;
     public:
         Constraints() = default;
 
-        auto require(const Condition& condition, const std::string_view message) -> void {
-            m_conditions.emplace_back(condition, message);
+        auto require(Condition condition, const std::string_view message) -> void {
+            m_conditions.emplace_back(std::move(condition), message);
+        }
+
+        auto when(Condition condition, const std::string_view message) -> When& {
+            When when{std::move(condition), message};
+            return m_whens.emplace_back(std::move(when));
         }
     };
 } // namespace argon
@@ -2722,6 +2763,12 @@ namespace argon::detail {
             for (const auto& [condition, msg] : constraints.m_conditions) {
                 if (!condition.evaluate(results)) {
                     errors.emplace_back(msg);
+                }
+            }
+
+            for (const auto& when : constraints.m_whens) {
+                if (auto validate = when.validate(results); !validate.has_value()) {
+                    errors.insert(errors.end(), validate.error().begin(), validate.error().end());
                 }
             }
 
