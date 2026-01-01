@@ -2557,11 +2557,57 @@ namespace argon::detail {
     using ExactlyNode = ThresholdNode<ExactlyPolicy>;
     using AtLeastNode = ThresholdNode<AtLeastPolicy>;
     using AtMostNode = ThresholdNode<AtMostPolicy>;
-}
+
+    class AndNode : public ConditionNode {
+        Polymorphic<ConditionNode> m_lhs;
+        Polymorphic<ConditionNode> m_rhs;
+
+    public:
+        AndNode(Polymorphic<ConditionNode> lhs, Polymorphic<ConditionNode> rhs)
+            : m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return m_lhs->evaluate(results) && m_rhs->evaluate(results);
+        }
+    };
+
+    class OrNode : public ConditionNode {
+        Polymorphic<ConditionNode> m_lhs;
+        Polymorphic<ConditionNode> m_rhs;
+
+    public:
+        OrNode(Polymorphic<ConditionNode> lhs, Polymorphic<ConditionNode> rhs)
+            : m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return m_lhs->evaluate(results) || m_rhs->evaluate(results);
+        }
+    };
+
+    class NotNode : public ConditionNode {
+        Polymorphic<ConditionNode> m_operand;
+
+    public:
+        explicit NotNode(Polymorphic<ConditionNode> operand)
+            : m_operand(std::move(operand)) {}
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+            return !m_operand->evaluate(results);
+        }
+    };
+} // namespace argon::detail
+
 
 namespace argon {
     class Condition {
         friend class detail::ConstraintValidator;
+
+        detail::Polymorphic<detail::ConditionNode> m_condition;
+
+        [[nodiscard]] auto evaluate(const Results& results) const -> bool {
+            return m_condition->evaluate(results);
+        }
+
         template <IsHandle T>
         friend auto present(T&& handle) -> Condition;
 
@@ -2577,10 +2623,28 @@ namespace argon {
         template <IsHandle Handle, IsHandle... Handles>
         friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
 
-        detail::Polymorphic<detail::ConditionNode> m_condition;
+        friend auto operator&(const Condition& lhs, const Condition& rhs) -> Condition {
+            Condition cond;
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+                detail::AndNode(lhs.m_condition, rhs.m_condition)
+            );
+            return cond;
+        }
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool {
-            return m_condition->evaluate(results);
+        friend auto operator|(const Condition& lhs, const Condition& rhs) -> Condition {
+            Condition cond;
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+                detail::OrNode(lhs.m_condition, rhs.m_condition)
+            );
+            return cond;
+        }
+
+        friend auto operator!(const Condition& operand) -> Condition {
+            Condition cond;
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
+                detail::NotNode(operand.m_condition)
+            );
+            return cond;
         }
     };
 
@@ -2628,7 +2692,7 @@ namespace argon {
         );
         return cond;
     }
-}
+} // namespace argon
 
 
 namespace argon {

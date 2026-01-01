@@ -60,12 +60,15 @@ int main(const int argc, const char *argv[]) {
 
     argon::Constraints constraints{};
     constraints.require(argon::present(bye_handle), "Flag --bye is required and must be set");
-    constraints.require(argon::present(pos1_handle), "Positional argument one is required and must be set");
-    constraints.require(argon::present(pos2_handle), "Positional argument two is required and must be set");
-    constraints.require(argon::exactly(1, hello_handle, world_handle),
-        "Exactly one of the following flags must be specified: '--hello' or '--world'");
-    constraints.require(argon::at_least(2, str_handle, str_choice_handle, file_handle),
-        "At least two of the following must be set: '--str', '--str-choice', or '--file'");
+    // constraints.require(argon::present(pos1_handle) & argon::present(pos2_handle),
+    //     "Positional arguments one and two are required and must be set");
+    // constraints.require(argon::exactly(1, hello_handle, world_handle),
+    //     "Exactly one of the following flags must be specified: '--hello' or '--world'");
+    // constraints.require(argon::at_least(2, str_handle, str_choice_handle, file_handle),
+    //     "At least two of the following must be set: '--str', '--str-choice', or '--file'");
+    constraints.require(argon::present(hello_handle) | argon::present(world_handle),
+        "Either '--hello' or '--world' must be provided");
+    constraints.require(!argon::absent(str_handle), "Flag --str is required and must be set");
 
     auto cli = argon::Cli{cmd, constraints}
         .with_program_description("A program to test the argon library.");
