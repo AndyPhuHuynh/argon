@@ -17,10 +17,12 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <queue>
 
 #include "argon.hpp"
 
 namespace argon::detail {
+
     template <typename Base>
     class PolymorphicBase {
     public:
@@ -659,8 +661,7 @@ namespace argon {
             }
             this->m_valueStorage = convert.value();
 
-            auto validate = this->apply_value_validator(this->m_valueStorage.value());
-            if (!validate.has_value()) {
+            if (auto validate = this->apply_value_validator(this->m_valueStorage.value()); !validate.has_value()) {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for flag '{}': {}",
                     str.value(), this->get_flag(), validate.error()));
@@ -761,8 +762,7 @@ namespace argon {
                     continue;
                 }
 
-                auto validate = this->apply_value_validator(result.value());
-                if (!validate.has_value()) {
+                if (auto validate = this->apply_value_validator(result.value()); !validate.has_value()) {
                     errors.emplace_back(std::format(
                         "Invalid value '{}' for flag '{}': {}",
                         value, this->get_flag(), validate.error()));
@@ -770,8 +770,7 @@ namespace argon {
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
 
-            auto validate = this->apply_group_validator(this->m_valueStorage);
-            if (!validate.has_value()) {
+            if (auto validate = this->apply_group_validator(this->m_valueStorage); !validate.has_value()) {
                 errors.emplace_back(std::format(
                     "Invalid values for flag '{}': {}",
                     this->get_flag(), validate.error()));
@@ -853,8 +852,7 @@ namespace argon {
             }
             this->m_valueStorage = result.value();
 
-            auto validate = this->apply_value_validator(this->m_valueStorage.value());
-            if (!validate.has_value()) {
+            if (auto validate = this->apply_value_validator(this->m_valueStorage.value()); !validate.has_value()) {
                 return std::unexpected(std::format(
                     "Invalid value '{}' for '{}': {}",
                     str.value(), this->get_name(), validate.error()));
@@ -902,8 +900,7 @@ namespace argon {
                     continue;
                 }
 
-                auto validate = this->apply_value_validator(result.value());
-                if (!validate.has_value()) {
+                if (auto validate = this->apply_value_validator(result.value()); !validate.has_value()) {
                     errors.emplace_back(std::format(
                         "Invalid value '{}' for '{}': {}",
                         value, this->get_name(), validate.error()));
@@ -911,8 +908,7 @@ namespace argon {
                 this->m_valueStorage.emplace_back(std::move(result.value()));
             }
 
-            auto validate = this->apply_group_validator(this->m_valueStorage);
-            if (!validate.has_value()) {
+            if (auto validate = this->apply_group_validator(this->m_valueStorage); !validate.has_value()) {
                 errors.emplace_back(std::format("Invalid values for '{}': {}", this->get_name(), validate.error()));
             }
 
@@ -1079,8 +1075,7 @@ namespace argon {
                 this->m_valueStorage.emplace_back(it->second);
             }
 
-            auto validate = this->apply_group_validator(this->m_valueStorage);
-            if (!validate.has_value()) {
+            if (auto validate = this->apply_group_validator(this->m_valueStorage); !validate.has_value()) {
                 errors.emplace_back(std::format(
                     "Invalid values for flag '{}': {}",
                     this->get_flag(), validate.error()));
@@ -1163,29 +1158,32 @@ namespace argon::detail {
 
 
 namespace argon {
-    template <typename T, typename Tag>
+    template <typename CommandTag, typename ValueType, typename HandleTag>
     class Handle {
         detail::UniqueId m_id;
 
     public:
+        Handle() = default;
+        explicit Handle(const detail::UniqueId& id) : m_id(id) {}
+
         [[nodiscard]] auto get_id() const -> detail::UniqueId {
             return m_id;
         }
     };
 
-    template <typename T> using FlagHandle            = Handle<T, struct FlagTag>;
-    template <typename T> using MultiFlagHandle       = Handle<T, struct MultiFlagTag>;
-    template <typename T> using PositionalHandle      = Handle<T, struct PositionalTag>;
-    template <typename T> using MultiPositionalHandle = Handle<T, struct MultiPositionalTag>;
-    template <typename T> using ChoiceHandle          = Handle<T, struct ChoiceTag>;
-    template <typename T> using MultiChoiceHandle     = Handle<T, struct MultiChoiceTag>;
-    using SubcommandHandle                            = Handle<void, struct SubcommandTag>;
+    template <typename CommandTag, typename ValueType> using FlagHandle            = Handle<CommandTag, ValueType, struct FlagTag>;
+    template <typename CommandTag, typename ValueType> using MultiFlagHandle       = Handle<CommandTag, ValueType, struct MultiFlagTag>;
+    template <typename CommandTag, typename ValueType> using PositionalHandle      = Handle<CommandTag, ValueType, struct PositionalTag>;
+    template <typename CommandTag, typename ValueType> using MultiPositionalHandle = Handle<CommandTag, ValueType, struct MultiPositionalTag>;
+    template <typename CommandTag, typename ValueType> using ChoiceHandle          = Handle<CommandTag, ValueType, struct ChoiceTag>;
+    template <typename CommandTag, typename ValueType> using MultiChoiceHandle     = Handle<CommandTag, ValueType, struct MultiChoiceTag>;
+    template <typename CommandTag> using SubcommandHandle = Handle<CommandTag, void, struct SubcommandTag>;
 
     template <typename T>
     struct is_argument_handle : std::false_type {};
 
-    template <typename Value, typename Tag>
-    struct is_argument_handle<Handle<Value, Tag>> : std::bool_constant<
+    template <typename CommandTag, typename Value, typename Tag>
+    struct is_argument_handle<Handle<CommandTag, Value, Tag>> : std::bool_constant<
         std::is_same_v<Tag, FlagTag> ||
         std::is_same_v<Tag, MultiFlagTag> ||
         std::is_same_v<Tag, PositionalTag> ||
@@ -1196,6 +1194,17 @@ namespace argon {
 
     template <typename T>
     concept IsArgumentHandle = is_argument_handle<std::remove_cvref_t<T>>::value;
+
+    template <typename T>
+    struct command_tag_of {};
+
+    template <typename CommandTag, typename Value, typename Tag>
+    struct command_tag_of<Handle<CommandTag, Value, Tag>> {
+        using type = CommandTag;
+    };
+
+    template <typename T>
+    using command_tag_of_t = typename command_tag_of<std::remove_cvref_t<T>>::type;
 
 } // namespace argon
 
@@ -1248,73 +1257,72 @@ namespace argon::detail {
 
     public:
         template <typename T>
-        [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
+        [[nodiscard]] auto add_flag(Flag<T> flag) -> UniqueId {
             if (const auto duplicateFlag = flag_or_alias_exists(flag); duplicateFlag.has_value()) {
                 throw std::invalid_argument(std::format(
                     "Unable to add flag/alias: flag/alias '{}' already exists", duplicateFlag.value()));
             }
-            FlagHandle<T> handle{};
-            m_flags.emplace(handle.get_id(), detail::make_polymorphic<FlagBase>(std::move(flag)));
-            m_insertionOrder.emplace_back(FlagKind::Flag, handle.get_id());
-            return handle;
+            const UniqueId id{};
+            m_flags.emplace(id, detail::make_polymorphic<FlagBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::Flag, id);
+            return id;
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_flag(MultiFlag<T> flag) -> MultiFlagHandle<T> {
+        [[nodiscard]] auto add_multi_flag(MultiFlag<T> flag) -> UniqueId {
             if (const auto duplicateFlag = flag_or_alias_exists(flag); duplicateFlag.has_value()) {
                 throw std::invalid_argument(std::format(
                     "Unable to add flag/alias: flag/alias '{}' already exists", duplicateFlag.value()));
             }
-            MultiFlagHandle<T> handle{};
-            m_multiFlags.emplace(handle.get_id(), detail::make_polymorphic<MultiFlagBase>(std::move(flag)));
-            m_insertionOrder.emplace_back(FlagKind::MultiFlag, handle.get_id());
-            return handle;
+            const UniqueId id{};
+            m_multiFlags.emplace(id, detail::make_polymorphic<MultiFlagBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::MultiFlag, id);
+            return id;
         }
 
         template <typename T>
-        [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
-            PositionalHandle<T> handle{};
-            m_positionalOrder.emplace_back(handle.get_id());
-            m_positionals.emplace(handle.get_id(), detail::make_polymorphic<PositionalBase>(std::move(positional)));
-            return handle;
+        [[nodiscard]] auto add_positional(Positional<T> positional) -> UniqueId {
+            const UniqueId id{};
+            m_positionalOrder.emplace_back(id);
+            m_positionals.emplace(id, detail::make_polymorphic<PositionalBase>(std::move(positional)));
+            return id;
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<T> {
+        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> UniqueId {
             if (contains_multi_positional()) {
                 throw std::logic_error("only one MultiPositional may be specified per context");
             }
 
-            MultiPositionalHandle<T> handle{};
+            const UniqueId id{};
             m_multiPositional = std::pair{
-                handle.get_id(),
-                detail::make_polymorphic<MultiPositionalBase>(std::move(positional))
+                id, detail::make_polymorphic<MultiPositionalBase>(std::move(positional))
             };
-            return handle;
+            return id;
         }
 
         template <typename T>
-        [[nodiscard]] auto add_choice(Choice<T> flag) -> ChoiceHandle<T> {
+        [[nodiscard]] auto add_choice(Choice<T> flag) -> UniqueId {
             if (const auto duplicateFlag = flag_or_alias_exists(flag); duplicateFlag.has_value()) {
                 throw std::invalid_argument(std::format(
                     "Unable to add flag/alias: flag/alias '{}' already exists", duplicateFlag.value()));
             }
-            ChoiceHandle<T> handle{};
-            m_choices.emplace(handle.get_id(), detail::make_polymorphic<ChoiceBase>(std::move(flag)));
-            m_insertionOrder.emplace_back(FlagKind::Choice, handle.get_id());
-            return handle;
+            const UniqueId id{};
+            m_choices.emplace(id, detail::make_polymorphic<ChoiceBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::Choice, id);
+            return id;
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_choice(MultiChoice<T> flag) -> MultiChoiceHandle<T> {
+        [[nodiscard]] auto add_multi_choice(MultiChoice<T> flag) -> UniqueId {
             if (const auto duplicateFlag = flag_or_alias_exists(flag); duplicateFlag.has_value()) {
                 throw std::invalid_argument(std::format(
                     "Unable to add flag/alias: flag/alias '{}' already exists", duplicateFlag.value()));
             }
-            MultiChoiceHandle<T> handle{};
-            m_multiChoices.emplace(handle.get_id(), detail::make_polymorphic<MultiChoiceBase>(std::move(flag)));
-            m_insertionOrder.emplace_back(FlagKind::MultiChoice, handle.get_id());
-            return handle;
+            const UniqueId id{};
+            m_multiChoices.emplace(id, detail::make_polymorphic<MultiChoiceBase>(std::move(flag)));
+            m_insertionOrder.emplace_back(FlagKind::MultiChoice, id);
+            return id;
         }
 
         [[nodiscard]] auto contains_flag(const std::string_view flagName) const -> bool {
@@ -1569,8 +1577,8 @@ namespace argon::detail {
 
                 size_t end = std::min(pos + wrapWidth, desc.size());
                 if (end < desc.size()) {
-                    const size_t lastSpace = desc.rfind(' ', end);
-                    if (lastSpace != std::string::npos && lastSpace > pos) {
+                    if (const size_t lastSpace = desc.rfind(' ', end);
+                        lastSpace != std::string::npos && lastSpace > pos) {
                         end = lastSpace;
                     }
                 }
@@ -1656,8 +1664,7 @@ namespace argon::detail {
             bool prevSectionSet = false;
             if (!programDescription.empty()) {
                 msg << "\nDescription:\n";
-                const auto wrapped = wrap_description(programDescription, maxLineWidth - usageColumn);
-                for (const auto& str : wrapped) {
+                for (const auto& str : wrap_description(programDescription, maxLineWidth - usageColumn)) {
                     msg << std::string(usageColumn, ' ') << str << "\n";
                 }
                 prevSectionSet = true;
@@ -2254,7 +2261,6 @@ namespace argon::detail {
             Context& context
         ) -> std::expected<void, std::vector<std::string>> {
             std::vector<AnalysisError> analysisErrors;
-            std::vector<std::string> validationErrors;
 
             process_single_value_option(ast.flags, analysisErrors,
                 [&context](const std::string_view name) { return context.get_flag(name); });
@@ -2272,51 +2278,98 @@ namespace argon::detail {
                     { return format_analysis_error(error); })
                 | std::ranges::to<std::vector>());
             }
-            if (!validationErrors.empty()) {
-                return std::unexpected(std::move(validationErrors));
-            }
             return {};
         }
     };
 } // namespace argon::detail
 
-namespace argon::detail { class ConstraintValidator; }
 
 namespace argon {
+    template<typename Tag> class Command;
+    class Cli;
+    struct RootCommandTag;
+} // namespace argon
+
+namespace argon::detail {
+    class ConstraintValidator;
+} // namespace argon::detail
+
+
+namespace argon {
+    template <typename CommandTag = RootCommandTag>
     class Results {
-        std::optional<detail::UniqueId> m_subcommandId;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> m_multiFlags;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> m_multiPositionals;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::ChoiceBase>*> m_choices;
-        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> m_multiChoices;
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> m_flags{};
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> m_multiFlags{};
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> m_positionals{};
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> m_multiPositionals{};
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::ChoiceBase>*> m_choices{};
+        std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> m_multiChoices{};
 
         friend class detail::ConstraintValidator;
-        friend class Command;
+        template <typename T> friend class Command;
         friend class Cli;
 
-        explicit Results(const detail::Context& context, const std::optional<detail::UniqueId> subcommandId)
-            : m_subcommandId(subcommandId) {
+        static auto init_flags(const detail::Context& context)
+        -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::FlagBase>*> flags;
             for (const auto& [id, flag] : context.get_flags()) {
-                m_flags.emplace(id, &flag);
+                flags.emplace(id, &flag);
             }
-            for (const auto& [id, flag] : context.get_multi_flags()) {
-                m_multiFlags.emplace(id, &flag);
-            }
-            for (const auto& [id, positional] : context.get_positionals()) {
-                m_positionals.emplace(id, &positional);
-            }
-            if (const auto& multiPos = context.get_multi_positional_with_id(); multiPos.has_value()) {
-                m_multiPositionals.emplace(multiPos->first, &multiPos->second);
-            }
-            for (const auto& [id, choice] : context.get_choices()) {
-                m_choices.emplace(id, &choice);
-            }
-            for (const auto& [id, choice] : context.get_multi_choices()) {
-                m_multiChoices.emplace(id, &choice);
-            }
+            return flags;
         }
+
+        static auto init_multi_flags(const detail::Context& context)
+            -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiFlagBase>*> multiFlags;
+            for (const auto& [id, flag] : context.get_multi_flags()) {
+                multiFlags.emplace(id, &flag);
+            }
+            return multiFlags;
+        }
+
+        static auto init_positionals(const detail::Context& context)
+            -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::PositionalBase>*> positionals;
+            for (const auto& [id, positional] : context.get_positionals()) {
+                positionals.emplace(id, &positional);
+            }
+            return positionals;
+        }
+
+        static auto init_multi_positionals(const detail::Context& context)
+            -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiPositionalBase>*> multiPositionals;
+            if (const auto& multiPos = context.get_multi_positional_with_id(); multiPos.has_value()) {
+                multiPositionals.emplace(multiPos->first, &multiPos->second);
+            }
+            return multiPositionals;
+        }
+
+        static auto init_choices(const detail::Context& context)
+            -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::ChoiceBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::ChoiceBase>*> choices;
+            for (const auto& [id, choice] : context.get_choices()) {
+                choices.emplace(id, &choice);
+            }
+            return choices;
+        }
+
+        static auto init_multi_choices(const detail::Context& context)
+            -> std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> {
+            std::unordered_map<detail::UniqueId, const detail::Polymorphic<detail::MultiChoiceBase>*> multiChoices;
+            for (const auto& [id, choice] : context.get_multi_choices()) {
+                multiChoices.emplace(id, &choice);
+            }
+            return multiChoices;
+        }
+
+        explicit Results(const detail::Context& context)
+            : m_flags(init_flags(context)),
+              m_multiFlags(init_multi_flags(context)),
+              m_positionals(init_positionals(context)),
+              m_multiPositionals(init_multi_positionals(context)),
+              m_choices(init_choices(context)),
+              m_multiChoices(init_multi_choices(context)) {}
 
         [[nodiscard]] auto get_flag_base(const detail::UniqueId id) const -> const detail::FlagBase * {
             const auto it = m_flags.find(id);
@@ -2365,56 +2418,46 @@ namespace argon {
             }
             return it->second->get();
         }
+
     public:
-        [[nodiscard]] auto is_root_cmd() const -> bool {
-            return m_subcommandId == std::nullopt;
-        }
-
-        [[nodiscard]] auto is_subcommand(const SubcommandHandle& handle) const -> bool {
-            if (m_subcommandId.has_value()) {
-                return m_subcommandId.value() == handle.get_id();
-            }
-            return false;
-        }
-
         template <typename T>
-        [[nodiscard]] auto is_specified(const FlagHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const FlagHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_flag_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto is_specified(const MultiFlagHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const MultiFlagHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_multi_flag_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto is_specified(const PositionalHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const PositionalHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_positional_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto is_specified(const MultiPositionalHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const MultiPositionalHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_multi_positional_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto is_specified(const ChoiceHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const ChoiceHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_choice_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto is_specified(const MultiChoiceHandle<T>& handle) const -> bool {
+        [[nodiscard]] auto is_specified(const MultiChoiceHandle<CommandTag, T>& handle) const -> bool {
             const auto base = get_multi_choice_base(handle.get_id());
             return base->is_set();
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const FlagHandle<T>& handle) const -> std::optional<T> {
+        [[nodiscard]] auto get(const FlagHandle<CommandTag, T>& handle) const -> std::optional<T> {
             const auto base = get_flag_base(handle.get_id());
             const auto value = dynamic_cast<const Flag<T>*>(base);
             if (!value) {
@@ -2432,7 +2475,7 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const MultiFlagHandle<T>& handle) const -> std::vector<T> {
+        [[nodiscard]] auto get(const MultiFlagHandle<CommandTag, T>& handle) const -> std::vector<T> {
             const auto base = get_multi_flag_base(handle.get_id());
             const auto value = dynamic_cast<const MultiFlag<T>*>(base);
             if (!value) {
@@ -2450,7 +2493,7 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const PositionalHandle<T>& handle) const -> std::optional<T> {
+        [[nodiscard]] auto get(const PositionalHandle<CommandTag, T>& handle) const -> std::optional<T> {
             const auto base = get_positional_base(handle.get_id());
             const auto value = dynamic_cast<const Positional<T>*>(base);
             if (!value) {
@@ -2462,7 +2505,7 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const MultiPositionalHandle<T>& handle) const -> std::vector<T> {
+        [[nodiscard]] auto get(const MultiPositionalHandle<CommandTag, T>& handle) const -> std::vector<T> {
             const auto base = get_multi_positional_base(handle.get_id());
             const auto value = dynamic_cast<const MultiPositional<T>*>(base);
             if (!value) {
@@ -2480,7 +2523,7 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const ChoiceHandle<T>& handle) const -> std::optional<T> {
+        [[nodiscard]] auto get(const ChoiceHandle<CommandTag, T>& handle) const -> std::optional<T> {
             const auto base = get_choice_base(handle.get_id());
             const auto value = dynamic_cast<const Choice<T>*>(base);
             if (!value) {
@@ -2498,7 +2541,7 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto get(const MultiChoiceHandle<T>& handle) const -> std::vector<T> {
+        [[nodiscard]] auto get(const MultiChoiceHandle<CommandTag, T>& handle) const -> std::vector<T> {
             const auto base = get_multi_choice_base(handle.get_id());
             const auto value = dynamic_cast<const MultiChoice<T>*>(base);
             if (!value) {
@@ -2518,34 +2561,33 @@ namespace argon {
 } // namespace argon
 
 
-namespace argon { class Condition; }
-
 namespace argon::detail {
+    template <typename CommandTag>
     class ConditionNode {
     public:
         virtual ~ConditionNode() = default;
 
-        [[nodiscard]] virtual auto evaluate(const Results& results) const -> bool = 0;
+        [[nodiscard]] virtual auto evaluate(const Results<CommandTag>& results) const -> bool = 0;
     };
 
-    template <IsArgumentHandle HandleT>
-    class PresentNode : public ConditionNode {
+    template <typename CommandTag, IsArgumentHandle HandleT>
+    class PresentNode final : public ConditionNode<CommandTag> {
         HandleT handle;
     public:
         explicit PresentNode(HandleT handle) : handle(handle) {};
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return results.is_specified(handle);
         }
     };
 
-    template <IsArgumentHandle HandleT>
-    class AbsentNode : public ConditionNode {
+    template <typename CommandTag, IsArgumentHandle HandleT>
+    class AbsentNode final : public ConditionNode<CommandTag> {
         HandleT m_handle;
     public:
         explicit AbsentNode(HandleT handle) : m_handle(handle) {};
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return !results.is_specified(m_handle);
         }
     };
@@ -2571,9 +2613,9 @@ namespace argon::detail {
         }
     };
 
-    template <typename Policy>
-    class ThresholdNode : public ConditionNode {
-        std::vector<Polymorphic<ConditionNode>> m_handles;
+    template <typename CommandTag, typename Policy>
+    class ThresholdNode final : public ConditionNode<CommandTag> {
+        std::vector<Polymorphic<ConditionNode<CommandTag>>> m_handles;
         uint32_t m_threshold;
 
     public:
@@ -2592,7 +2634,7 @@ namespace argon::detail {
             }
         }
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             uint32_t numPresent = 0;
             for (const auto& node : m_handles) {
                 if (node->evaluate(results)) {
@@ -2603,56 +2645,60 @@ namespace argon::detail {
         }
     };
 
-    using ExactlyNode = ThresholdNode<ExactlyPolicy>;
-    using AtLeastNode = ThresholdNode<AtLeastPolicy>;
-    using AtMostNode = ThresholdNode<AtMostPolicy>;
+    template <typename CommandTag> using ExactlyNode = ThresholdNode<CommandTag, ExactlyPolicy>;
+    template <typename CommandTag> using AtLeastNode = ThresholdNode<CommandTag, AtLeastPolicy>;
+    template <typename CommandTag> using AtMostNode  = ThresholdNode<CommandTag, AtMostPolicy>;
 
-    class AndNode : public ConditionNode {
-        Polymorphic<ConditionNode> m_lhs;
-        Polymorphic<ConditionNode> m_rhs;
+    template <typename CommandTag>
+    class AndNode final : public ConditionNode<CommandTag> {
+        Polymorphic<ConditionNode<CommandTag>> m_lhs;
+        Polymorphic<ConditionNode<CommandTag>> m_rhs;
 
     public:
-        AndNode(Polymorphic<ConditionNode> lhs, Polymorphic<ConditionNode> rhs)
+        AndNode(Polymorphic<ConditionNode<CommandTag>> lhs, Polymorphic<ConditionNode<CommandTag>> rhs)
             : m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return m_lhs->evaluate(results) && m_rhs->evaluate(results);
         }
     };
 
-    class OrNode : public ConditionNode {
-        Polymorphic<ConditionNode> m_lhs;
-        Polymorphic<ConditionNode> m_rhs;
+    template <typename CommandTag>
+    class OrNode final : public ConditionNode<CommandTag> {
+        Polymorphic<ConditionNode<CommandTag>> m_lhs;
+        Polymorphic<ConditionNode<CommandTag>> m_rhs;
 
     public:
-        OrNode(Polymorphic<ConditionNode> lhs, Polymorphic<ConditionNode> rhs)
+        OrNode(Polymorphic<ConditionNode<CommandTag>> lhs, Polymorphic<ConditionNode<CommandTag>> rhs)
             : m_lhs(std::move(lhs)), m_rhs(std::move(rhs)) {}
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return m_lhs->evaluate(results) || m_rhs->evaluate(results);
         }
     };
 
-    class NotNode : public ConditionNode {
-        Polymorphic<ConditionNode> m_operand;
+    template <typename CommandTag>
+    class NotNode final : public ConditionNode<CommandTag> {
+        Polymorphic<ConditionNode<CommandTag>> m_operand;
 
     public:
-        explicit NotNode(Polymorphic<ConditionNode> operand)
+        explicit NotNode(Polymorphic<ConditionNode<CommandTag>> operand)
             : m_operand(std::move(operand)) {}
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return !m_operand->evaluate(results);
         }
     };
 
-    class CustomNode : public ConditionNode {
-        std::function<bool(const Results& results)> m_evaluateFn;
+    template <typename CommandTag>
+    class CustomNode final : public ConditionNode<CommandTag> {
+        std::function<bool(const Results<CommandTag>& results)> m_evaluateFn;
 
     public:
-        explicit CustomNode(std::function<bool(const Results& results)> evaluateFn)
+        explicit CustomNode(std::function<bool(const Results<CommandTag>& results)> evaluateFn)
             : m_evaluateFn(std::move(evaluateFn)) {}
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool override {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool override {
             return m_evaluateFn(results);
         }
     };
@@ -2660,45 +2706,56 @@ namespace argon::detail {
 
 
 namespace argon {
+    template <typename CommandTag> class When;
+    template <typename CommandTag> class Constraints;
+} // namespace argon
+
+
+namespace argon {
+    template <typename CommandTag>
     class Condition {
-        friend class When;
+        friend When<CommandTag>;
         friend class detail::ConstraintValidator;
 
-        detail::Polymorphic<detail::ConditionNode> m_condition;
+        detail::Polymorphic<detail::ConditionNode<CommandTag>> m_condition;
 
-        [[nodiscard]] auto evaluate(const Results& results) const -> bool {
+        [[nodiscard]] auto evaluate(const Results<CommandTag>& results) const -> bool {
             return m_condition->evaluate(results);
         }
 
         template <IsArgumentHandle T>
-        friend auto present(T&& handle) -> Condition;
+        friend auto present(T&& handle) -> Condition<command_tag_of_t<T>>;
 
         template <IsArgumentHandle T>
-        friend auto absent(T&& handle) -> Condition;
+        friend auto absent(T&& handle) -> Condition<command_tag_of_t<T>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        friend auto exactly(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+            requires (std::is_same_v<Handle, Handles> && ...)
+        friend auto exactly(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        friend auto at_least(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+            requires (std::is_same_v<Handle, Handles> && ...)
+        friend auto at_least(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition;
+            requires (std::is_same_v<Handle, Handles> && ...)
+        friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
-        friend auto condition(std::function<bool(const Results& results)>) -> Condition;
+        template <typename CmdTag>
+        friend auto condition(std::function<bool(const Results<CmdTag>& results)> evaluateFn) -> Condition<CmdTag>;
 
         friend auto operator&(const Condition& lhs, const Condition& rhs) -> Condition {
             Condition cond;
-            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-                detail::AndNode(lhs.m_condition, rhs.m_condition)
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CommandTag>>(
+                detail::AndNode<CommandTag>(lhs.m_condition, rhs.m_condition)
             );
             return cond;
         }
 
         friend auto operator|(const Condition& lhs, const Condition& rhs) -> Condition {
             Condition cond;
-            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-                detail::OrNode(lhs.m_condition, rhs.m_condition)
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CommandTag>>(
+                detail::OrNode<CommandTag>(lhs.m_condition, rhs.m_condition)
             );
             return cond;
         }
@@ -2713,69 +2770,79 @@ namespace argon {
     };
 
     template <IsArgumentHandle HandleT>
-    [[nodiscard]] auto present(HandleT&& handle) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::PresentNode<HandleT>(
+    [[nodiscard]] auto present(HandleT&& handle) -> Condition<command_tag_of_t<HandleT>> {
+        using CmdTag = command_tag_of_t<HandleT>;
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(detail::PresentNode<CmdTag, HandleT>(
             std::forward<HandleT>(handle)
         ));
         return cond;
     }
 
     template <IsArgumentHandle HandleT>
-    [[nodiscard]] auto absent(HandleT&& handle) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(detail::AbsentNode<HandleT>(
+    [[nodiscard]] auto absent(HandleT&& handle) -> Condition<command_tag_of_t<HandleT>> {
+        using CmdTag = command_tag_of_t<HandleT>;
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(detail::AbsentNode<CmdTag, HandleT>(
             std::forward<HandleT>(handle)
         ));
         return cond;
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-    [[nodiscard]] auto exactly(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-            detail::ExactlyNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        requires (std::is_same_v<Handle, Handles> && ...)
+    [[nodiscard]] auto exactly(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
+        using CmdTag = command_tag_of_t<Handle>;
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(
+            detail::ExactlyNode<CmdTag>(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
         );
         return cond;
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-    [[nodiscard]] auto at_least(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-            detail::AtLeastNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        requires (std::is_same_v<Handle, Handles> && ...)
+    [[nodiscard]] auto at_least(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
+        using CmdTag = command_tag_of_t<Handle>;
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(
+            detail::AtLeastNode<CmdTag>(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
         );
         return cond;
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-    [[nodiscard]] auto at_most(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-            detail::AtMostNode(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
+        requires (std::is_same_v<Handle, Handles> && ...)
+    [[nodiscard]] auto at_most(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
+        using CmdTag = command_tag_of_t<Handle>;
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(
+            detail::AtMostNode<CmdTag>(threshold, std::forward<Handle>(handle), std::forward<Handles>(handles)...)
         );
         return cond;
     }
 
-    inline auto condition(std::function<bool(const Results& results)> evaluateFn) -> Condition {
-        Condition cond;
-        cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-            detail::CustomNode(std::move(evaluateFn))
+    template <typename CmdTag>
+    auto condition(std::function<bool(const Results<CmdTag>& results)> evaluateFn) -> Condition<CmdTag> {
+        Condition<CmdTag> cond;
+        cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CmdTag>>(
+            detail::CustomNode<CmdTag>(std::move(evaluateFn))
         );
         return cond;
     }
 
+    template <typename CommandTag>
     class When {
-        friend class Constraints;
+        friend Constraints<CommandTag>;
         friend class detail::ConstraintValidator;
 
-        std::pair<Condition, std::string> m_precondition;
-        std::vector<std::pair<Condition, std::string>> m_conditions;
+        std::pair<Condition<CommandTag>, std::string> m_precondition;
+        std::vector<std::pair<Condition<CommandTag>, std::string>> m_conditions;
 
-        When(Condition precondition, const std::string_view description)
+        When(Condition<CommandTag> precondition, const std::string_view description)
             : m_precondition(std::move(precondition), description) {}
 
-        [[nodiscard]] auto validate(const Results& results) const -> std::expected<void, std::vector<std::string>> {
+        [[nodiscard]] auto validate(const Results<CommandTag>& results) const -> std::expected<void, std::vector<std::string>> {
             if (!m_precondition.first.evaluate(results)) return {};
             std::vector<std::string> errors;
             for (const auto& [condition, msg] : m_conditions) {
@@ -2788,12 +2855,12 @@ namespace argon {
         }
 
     public:
-        auto require(const Condition& condition, const std::string_view message) & -> When& {
+        auto require(const Condition<CommandTag>& condition, const std::string_view message) & -> When& {
             m_conditions.emplace_back(condition, message);
             return *this;
         }
 
-        auto require(const Condition& condition, const std::string_view message) && -> When&& {
+        auto require(const Condition<CommandTag>& condition, const std::string_view message) && -> When&& {
             m_conditions.emplace_back(condition, message);
             return std::move(*this);
         }
@@ -2802,20 +2869,21 @@ namespace argon {
 
 
 namespace argon {
+    template <typename CommandTag>
     class Constraints {
-        friend class detail::ConstraintValidator;
+        friend detail::ConstraintValidator;
+        template <typename T> friend class Command;
 
-        std::vector<std::pair<Condition, std::string>> m_conditions;
-        std::vector<When> m_whens;
+        std::vector<std::pair<Condition<CommandTag>, std::string>> m_conditions;
+        std::vector<When<CommandTag>> m_whens;
+
     public:
-        Constraints() = default;
-
-        auto require(Condition condition, const std::string_view message) -> void {
+        auto require(Condition<CommandTag> condition, const std::string_view message) -> void {
             m_conditions.emplace_back(std::move(condition), message);
         }
 
-        auto when(Condition condition, const std::string_view message) -> When& {
-            When when{std::move(condition), message};
+        auto when(Condition<CommandTag> condition, const std::string_view message) -> When<CommandTag>& {
+            When<CommandTag> when{std::move(condition), message};
             return m_whens.emplace_back(std::move(when));
         }
     };
@@ -2825,9 +2893,10 @@ namespace argon {
 namespace argon::detail {
     class ConstraintValidator {
     public:
+        template <typename CommandTag>
         static auto validate(
-            const Constraints& constraints,
-            const Results& results
+            const Constraints<CommandTag>& constraints,
+            const Results<CommandTag>& results
         ) -> std::expected<void, std::vector<std::string>> {
             std::vector<std::string> errors;
 
@@ -2850,19 +2919,34 @@ namespace argon::detail {
 }
 
 
-namespace argon {
-    class Command {
+namespace argon::detail {
+    class CommandBase {
         friend class Cli;
 
+    protected:
         std::string m_name;
-        detail::Context m_context;
-        std::vector<std::pair<detail::UniqueId, Command>> m_subcommands;
-        std::vector<Constraints> m_constraints;
+        Context m_context;
+        std::vector<std::pair<UniqueId, Polymorphic<CommandBase>>> m_subcommands;
 
-        [[nodiscard]] auto run(
-            const detail::ArgvView& argv,
-            const std::optional<detail::UniqueId> subcommandId
-        ) -> std::expected<Results, std::vector<std::string>> {
+    public:
+        explicit CommandBase(const std::string_view name) : m_name(name) {}
+        virtual ~CommandBase() = default;
+
+        [[nodiscard]] virtual auto run(const ArgvView& argv) -> std::expected<void, std::vector<std::string>> = 0;
+    };
+} // namespace argon::detail
+
+
+namespace argon {
+    template <typename Tag = RootCommandTag>
+    class Command final : public detail::CommandBase {
+        friend class Cli;
+
+    public:
+        Constraints<Tag> constraints;
+
+    private:
+        [[nodiscard]] auto run(const detail::ArgvView& argv) -> std::expected<void, std::vector<std::string>> override {
             auto ast = detail::AstBuilder::build(argv, m_context);
             if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
 
@@ -2870,71 +2954,69 @@ namespace argon {
                 return std::unexpected(std::move(analysisSuccess.error()));
             }
 
-            Results results{m_context, subcommandId};
-            std::vector<std::string> errors;
-            for (const auto& constraint : m_constraints) {
-                if (auto constraintSuccess = detail::ConstraintValidator::validate(constraint, results); !constraintSuccess) {
-                    errors.insert(errors.end(), constraintSuccess.error().begin(), constraintSuccess.error().end());
-                }
-            }
-            if (!errors.empty()) {
-                return std::unexpected(std::move(errors));
+            Results<Tag> results{m_context};
+            if (auto constraintSuccess = detail::ConstraintValidator::validate(constraints, results); !constraintSuccess) {
+                return std::unexpected(std::move(constraintSuccess.error()));
             }
 
-            return results;
+            return {};
         }
 
     public:
-        explicit Command(const std::string_view name) : m_name(name) {}
+        explicit Command(const std::string_view name) : CommandBase(name) {}
 
         template <typename T>
-        [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<T> {
-            return m_context.add_flag(std::move(flag));
+        [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_flag(std::move(flag));
+            return FlagHandle<Tag, T>{id};
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_flag(MultiFlag<T> flag) -> MultiFlagHandle<T> {
-            return m_context.add_multi_flag(std::move(flag));
+        [[nodiscard]] auto add_multi_flag(MultiFlag<T> flag) -> MultiFlagHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_multi_flag(std::move(flag));
+            return MultiFlagHandle<Tag, T>{id};
         }
 
         template <typename T>
-        [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<T> {
-            return m_context.add_positional(std::move(positional));
+        [[nodiscard]] auto add_positional(Positional<T> positional) -> PositionalHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_positional(std::move(positional));
+            return PositionalHandle<Tag, T>{id};
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<T> {
-            return m_context.add_multi_positional(std::move(positional));
+        [[nodiscard]] auto add_multi_positional(MultiPositional<T> positional) -> MultiPositionalHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_multi_positional(std::move(positional));
+            return MultiPositionalHandle<Tag, T>{id};
         }
 
         template <typename T>
-        [[nodiscard]] auto add_choice(Choice<T> choice) -> ChoiceHandle<T> {
-            return m_context.add_choice(std::move(choice));
+        [[nodiscard]] auto add_choice(Choice<T> choice) -> ChoiceHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_choice(std::move(choice));
+            return ChoiceHandle<Tag, T>{id};
         }
 
         template <typename T>
-        [[nodiscard]] auto add_multi_choice(MultiChoice<T> choice) -> MultiChoiceHandle<T> {
-            return m_context.add_multi_choice(std::move(choice));
+        [[nodiscard]] auto add_multi_choice(MultiChoice<T> choice) -> MultiChoiceHandle<Tag, T> {
+            const detail::UniqueId id = m_context.add_multi_choice(std::move(choice));
+            return MultiChoiceHandle<Tag, T>{id};
         }
 
-        [[nodiscard]] auto add_subcommand(Command subcommand) -> SubcommandHandle {
-            const SubcommandHandle handle;
-            m_subcommands.emplace_back(handle.get_id(), std::move(subcommand));
+        template <typename T>
+        [[nodiscard]] auto add_subcommand(Command<T> subcommand) -> SubcommandHandle<T> {
+            const SubcommandHandle<T> handle;
+            m_subcommands.emplace_back(handle.get_id(), detail::make_polymorphic<CommandBase>(std::move(subcommand)));
             return handle;
-        }
-
-        auto add_constraints(Constraints constraints) -> void {
-            m_constraints.emplace_back(std::move(constraints));
         }
     };
 
     class Cli {
-        Command m_root;
+        Command<> m_root;
         std::string m_programName = "program";
         std::string m_programDescription;
+        std::optional<detail::UniqueId> m_successfulCommandId;
     public:
 
-        explicit Cli(Command root_) : m_root(std::move(root_)) {}
+        explicit Cli(Command<> root_) : m_root(std::move(root_)) {}
 
         auto with_program_description(const std::string_view desc) & -> Cli& {
             m_programDescription = desc;
@@ -2950,12 +3032,11 @@ namespace argon {
             return detail::HelpMessageBuilder::build(m_root.m_context, m_programName, m_programDescription);
         }
 
-        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<Results, std::vector<std::string>> {
+        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, std::vector<std::string>> {
             detail::ArgvView view{argc, argv};
             m_programName = std::filesystem::path(view.next()).filename().string();
 
-            Command *cmd = &m_root;
-            std::optional<detail::UniqueId> subcommandId;
+            detail::CommandBase *cmd = &m_root;
             while (true) {
                 if (cmd->m_subcommands.empty() || view.get_pos() >= view.size()) {
                     break;
@@ -2964,10 +3045,10 @@ namespace argon {
                 const std::string_view token = view.peek();
                 bool subcommandFound = false;
                 for (auto& [id, subcommand] : cmd->m_subcommands) {
-                    if (token == subcommand.m_name) {
+                    if (token == subcommand->m_name) {
                         subcommandFound = true;
-                        subcommandId = id;
-                        cmd = &subcommand;
+                        m_successfulCommandId = id;
+                        cmd = subcommand.get();
                         view.next();
                         break;
                     }
@@ -2979,9 +3060,9 @@ namespace argon {
                 }
 
                 std::string subcommands = std::ranges::fold_left(
-                    cmd->m_subcommands | std::views::values | std::views::drop(1), cmd->m_subcommands[0].second.m_name,
-                    [](const std::string& acc, const Command& subcommand) -> std::string {
-                        return acc + ", " + subcommand.m_name;
+                    cmd->m_subcommands | std::views::values | std::views::drop(1), cmd->m_subcommands[0].second->m_name,
+                    [](const std::string& acc, const detail::Polymorphic<detail::CommandBase>& subcommand) -> std::string {
+                        return acc + ", " + subcommand->m_name;
                     }
                 );
                 return std::unexpected(std::vector{std::format(
@@ -2989,7 +3070,44 @@ namespace argon {
                     token, subcommands)});
             }
 
-            return cmd->run(view, subcommandId);
+            return cmd->run(view);
+        }
+
+        [[nodiscard]] auto was_root_selected() const -> bool {
+            return m_successfulCommandId == std::nullopt;
+        }
+
+        template <typename CmdTag>
+        [[nodiscard]] auto was_subcommand_selected(const SubcommandHandle<CmdTag>& handle) const -> bool {
+            return m_successfulCommandId.has_value() && handle.get_id() == m_successfulCommandId.value();
+        }
+
+        [[nodiscard]] auto get_root_results() const -> Results<> {
+            return Results{m_root.m_context};
+        }
+
+        template <typename CmdTag>
+        [[nodiscard]] auto get_subcommand_results(const SubcommandHandle<CmdTag>& handle) const -> Results<CmdTag> {
+            std::queue<std::pair<detail::UniqueId, const detail::CommandBase *>> m_nodesToVisit;
+            for (const auto& [id, subcommand] : m_root.m_subcommands) {
+                m_nodesToVisit.emplace(id, subcommand.get());
+            }
+
+            while (!m_nodesToVisit.empty()) {
+                const auto& [id, cmd] = m_nodesToVisit.front();
+                if (id == handle.get_id()) {
+                    return Results<CmdTag>(cmd->m_context);
+                }
+                for (const auto& [subId, subCmd] : cmd->m_subcommands) {
+                    if (subId == handle.get_id()) {
+                        return Results<CmdTag>(subCmd->m_context);
+                    }
+                    m_nodesToVisit.emplace(subId, subCmd.get());
+                }
+                m_nodesToVisit.pop();
+            }
+
+            throw std::runtime_error("No subcommand with this ID exists");
         }
     };
 } // namespace argon
