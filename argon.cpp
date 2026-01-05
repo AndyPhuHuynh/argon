@@ -2,8 +2,16 @@
 #include "argon.hpp"
 
 int main(const int argc, const char *argv[]) {
+    auto debug_cmd = argon::Command<struct DebugCmdTag>("debug", "Build as debug");
+    auto level_handle = debug_cmd.add_flag(argon::Flag<int>("--level")
+        .with_alias("-l")
+        .with_value_validator([](const int& x) { return 0 <= x && x <= 3; }, "Debug must be a number in the range 0-3")
+        .with_description("The debug level (value 0-3)")
+    );
+
     // -----------------------------------------
-    auto build_cmd = argon::Command<struct BuildCmdTag>("build");
+    auto build_cmd = argon::Command<struct BuildCmdTag>("build", "Build the project");
+    auto debug_cmd_handle = build_cmd.add_subcommand(std::move(debug_cmd));
     auto threads_handle = build_cmd.add_flag(argon::Flag<int>("--threads").with_alias("-t"));
     auto verbose_handle = build_cmd.add_flag(argon::Flag<bool>("--verbose").with_alias("-v").with_implicit(true));
     auto timer_handle = build_cmd.add_flag(argon::Flag<float>("--timer"));
@@ -12,7 +20,7 @@ int main(const int argc, const char *argv[]) {
         .require(argon::present(timer_handle), "--timer must be set");
 
     // -----------------------------------------
-    auto run_cmd = argon::Command<struct RunCmdTag>("run");
+    auto run_cmd = argon::Command<struct RunCmdTag>("run", "Run the project");
     auto speed_handle = run_cmd.add_flag(argon::Flag<int>("--speed").with_alias("-s"));
     auto language_handle = run_cmd.add_flag(argon::Flag<std::string>("--language").with_alias("-l"));
     auto run_files_handle = run_cmd.add_multi_positional(argon::MultiPositional<std::filesystem::path>("files"));
@@ -21,7 +29,7 @@ int main(const int argc, const char *argv[]) {
     run_cmd.constraints.require(argon::present(run_files_handle), "At least one file must be provided");
 
     // -----------------------------------------
-    auto cmd = argon::Command("app");
+    auto cmd = argon::Command("root", "A program to test the argon library.");
     auto build_subcommand_handle = cmd.add_subcommand(std::move(build_cmd));
     auto run_subcommand_handle = cmd.add_subcommand(std::move(run_cmd));
 
@@ -104,42 +112,41 @@ int main(const int argc, const char *argv[]) {
             return bye.value() > hello.value();
         }), "--bye must be greater than --hello");
 
-    auto cli = argon::Cli{cmd}
-        .with_program_description("A program to test the argon library.");
+    auto cli = argon::Cli{cmd};
 
     if (const auto runSuccess = cli.run(argc, argv); !runSuccess) {
-        for (const auto& error : runSuccess.error()) {
+        for (const auto& error : runSuccess.error().messages) {
             std::cout << error << "\n";
         }
+        std::cout << cli.get_help_message(runSuccess.error().handle);
         return 1;
     }
 
     std::cout << "No errors woohoo!\n";
-    if (cli.was_root_selected()) {
-        const auto results = cli.get_root_results();
-        if (results.is_specified(help_handle)) {
-            const auto helpMsg = cli.get_help_message();
+    if (const auto root_results = cli.try_get_results(cli.get_root_handle())) {
+        if (root_results->is_specified(help_handle)) {
+            const auto helpMsg = cli.get_help_message(build_subcommand_handle);
             std::cout << helpMsg << "\n";
             return 0;
         }
 
-        std::optional<int> hello = results.get(hello_handle);
-        std::optional<int> world = results.get(world_handle);
-        std::optional<int> bye   = results.get(bye_handle);
-        std::vector<char> chars  = results.get(multi_char_handle);
-        std::optional<std::string> str = results.get(str_handle);
-        std::optional<std::filesystem::path> file = results.get(file_handle);
-        std::optional<std::string> pos1 = results.get(pos1_handle);
-        std::optional<std::string> pos2 = results.get(pos2_handle);
-        std::optional<std::string> pos3 = results.get(pos3_handle);
-        std::vector<std::string> strings = results.get(multi_pos_handle);
-        std::optional<std::string> str_choice = results.get(str_choice_handle);
-        std::vector<int> num_choices = results.get(num_choice_handle);
+        std::optional<int> hello = root_results->get(hello_handle);
+        std::optional<int> world = root_results->get(world_handle);
+        std::optional<int> bye   = root_results->get(bye_handle);
+        std::vector<char> chars  = root_results->get(multi_char_handle);
+        std::optional<std::string> str = root_results->get(str_handle);
+        std::optional<std::filesystem::path> file = root_results->get(file_handle);
+        std::optional<std::string> pos1 = root_results->get(pos1_handle);
+        std::optional<std::string> pos2 = root_results->get(pos2_handle);
+        std::optional<std::string> pos3 = root_results->get(pos3_handle);
+        std::vector<std::string> strings = root_results->get(multi_pos_handle);
+        std::optional<std::string> str_choice = root_results->get(str_choice_handle);
+        std::vector<int> num_choices = root_results->get(num_choice_handle);
 
-        if (!results.is_specified(str_handle)) {
+        if (!root_results->is_specified(str_handle)) {
             std::cout << "Flag '--str' was not provided. Resorting to value of 'default value!'\n";
         }
-        if (!results.is_specified(multi_char_handle)) {
+        if (!root_results->is_specified(multi_char_handle)) {
             std::cout << "Flag '--chars' was not provided. Resorting to default value of {'x', 'y', 'z'}\n";
         }
 
@@ -169,20 +176,18 @@ int main(const int argc, const char *argv[]) {
         for (const auto& num : num_choices) {
             std::cout << "\t" << num << "\n";
         }
-    } else if (cli.was_subcommand_selected(build_subcommand_handle)) {
-        const auto results = cli.get_subcommand_results(build_subcommand_handle);
-        std::optional<int> threads = results.get(threads_handle);
-        std::optional<bool> verbose = results.get(verbose_handle);
-        std::optional<float> timer = results.get(timer_handle);
+    } else if (const auto build_results = cli.try_get_results(build_subcommand_handle)) {
+        std::optional<int> threads  = build_results->get(threads_handle);
+        std::optional<bool> verbose = build_results->get(verbose_handle);
+        std::optional<float> timer  = build_results->get(timer_handle);
 
         std::cout << "Threads " << (threads ? threads.value() : -1) << "\n";
         std::cout << "Verbose " << (verbose ? verbose.value() : -1) << "\n";
         std::cout << "Timer "   << (timer   ? timer.value()   : -1) << "\n";
-    } else if (cli.was_subcommand_selected(run_subcommand_handle)) {
-        const auto results = cli.get_subcommand_results(run_subcommand_handle);
-        std::optional<int> speed = results.get(speed_handle);
-        std::optional<std::string> language = results.get(language_handle);
-        std::vector<std::filesystem::path> files = results.get(run_files_handle);
+    } else if (const auto run_results = cli.try_get_results(run_subcommand_handle)) {
+        std::optional<int> speed = run_results->get(speed_handle);
+        std::optional<std::string> language = run_results->get(language_handle);
+        std::vector<std::filesystem::path> files = run_results->get(run_files_handle);
 
         std::cout << "Speed " << (speed ? speed.value() : -1) << "\n";
         std::cout << "Language " << (language ? language.value() : "no value") << "\n";
@@ -190,6 +195,9 @@ int main(const int argc, const char *argv[]) {
         for (const auto& file : files) {
             std::cout << "\t" << file << "\n";
         }
+    } else if (const auto debug_results = cli.try_get_results(debug_cmd_handle)) {
+        std::optional<int> level = debug_results->get(level_handle);
+        std::cout << "Level " << (level ? level.value() : -1) << "\n";
     }
 
     return 0;

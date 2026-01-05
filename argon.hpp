@@ -18,6 +18,7 @@
 #include <variant>
 #include <vector>
 #include <queue>
+#include <pstl/algorithm_impl.h>
 
 #include "argon.hpp"
 
@@ -1160,10 +1161,12 @@ namespace argon::detail {
 namespace argon {
     template <typename CommandTag, typename ValueType, typename HandleTag>
     class Handle {
+        // ReSharper disable CppDFANotInitializedField
         detail::UniqueId m_id;
+        // ReSharper restore CppDFANotInitializedField
 
     public:
-        Handle() = default;
+        Handle() = delete;
         explicit Handle(const detail::UniqueId& id) : m_id(id) {}
 
         [[nodiscard]] auto get_id() const -> detail::UniqueId {
@@ -1177,7 +1180,8 @@ namespace argon {
     template <typename CommandTag, typename ValueType> using MultiPositionalHandle = Handle<CommandTag, ValueType, struct MultiPositionalTag>;
     template <typename CommandTag, typename ValueType> using ChoiceHandle          = Handle<CommandTag, ValueType, struct ChoiceTag>;
     template <typename CommandTag, typename ValueType> using MultiChoiceHandle     = Handle<CommandTag, ValueType, struct MultiChoiceTag>;
-    template <typename CommandTag> using SubcommandHandle = Handle<CommandTag, void, struct SubcommandTag>;
+    template <typename CommandTag> using CommandHandle = Handle<CommandTag, void, struct SubcommandTag>;
+    using AnyCommandHandle = Handle<struct AnyCommandTag, void, struct AnyCommandTag>;
 
     template <typename T>
     struct is_argument_handle : std::false_type {};
@@ -1641,11 +1645,36 @@ namespace argon::detail {
             return descriptions;
         }
 
+        static auto concat_name_and_desc(
+            std::ostream& os,
+            const std::string_view name,
+            const std::vector<std::string>& desc,
+            const size_t descCol
+        ) -> void {
+            os << std::string(usageColumn, ' ') << name << std::string(bufferBetweenUsageAndDesc, ' ');
+            if (desc.empty()) {
+                os << "\n";
+                return;
+            }
+
+            if (usageColumn + name.size() + bufferBetweenUsageAndDesc > descCol) {
+                os << "\n";
+                os << std::string(descCol, ' ') << desc.at(0) << "\n";
+            } else {
+                os << std::string(descCol - (usageColumn + name.size() + bufferBetweenUsageAndDesc) , ' ');
+                os << desc.at(0) << "\n";
+            }
+            for (const auto& str : desc | std::views::drop(1)) {
+                os << std::string(descCol, ' ') << str << "\n";
+            }
+        }
+
     public:
         [[nodiscard]] static auto build(
             const Context& context,
-            const std::string_view programName,
-            const std::string_view programDescription
+            const std::vector<std::pair<std::string_view, std::string_view>>& subcommandNamesAndDesc,
+            const std::string_view commandPath,
+            const std::string_view commandDescription
         ) -> std::string {
             std::ostringstream msg;
 
@@ -1653,35 +1682,72 @@ namespace argon::detail {
             const auto optionUsageMessages = get_option_usage_messages(context);
             const auto positionalUsageMessages = get_positional_usage_messages(context);
 
-            msg << std::format("Usage: {} ", programName);
-            if (!optionOrders.empty()) {
-                msg << "[options]";
+            // Usage message
+            msg << "Usage:\n";
+            if (!subcommandNamesAndDesc.empty()) {
+                msg << std::string(usageColumn, ' ') << commandPath << " <command>\n";
             }
-            for (const auto& posUsage : positionalUsageMessages) {
-                msg << " " << posUsage;
+            if (!optionOrders.empty() || !positionalUsageMessages.empty()) {
+                msg << std::string(usageColumn, ' ') << commandPath;
+                if (!optionOrders.empty()) {
+                    msg << " [options]";
+                }
+                for (const auto& posUsage : positionalUsageMessages) {
+                    msg << " " << posUsage;
+                }
+            }
+            if (subcommandNamesAndDesc.empty() && optionOrders.empty() && positionalUsageMessages.empty()) {
+                msg << std::string(usageColumn, ' ') << commandPath;
             }
 
+            // Description
             bool prevSectionSet = false;
-            if (!programDescription.empty()) {
-                msg << "\nDescription:\n";
-                for (const auto& str : wrap_description(programDescription, maxLineWidth - usageColumn)) {
+            if (!commandDescription.empty()) {
+                msg << "\n\nDescription:\n";
+                for (const auto descriptions = wrap_description(commandDescription, maxLineWidth - usageColumn);
+                        const auto& str : descriptions) {
                     msg << std::string(usageColumn, ' ') << str << "\n";
                 }
                 prevSectionSet = true;
             }
 
+            // Subcommands
+            if (!subcommandNamesAndDesc.empty()) {
+                if (prevSectionSet) {
+                    msg << "\n";
+                }
+                msg << "Commands:\n";
+
+                const size_t maxCmdName =
+                    std::min(maxDescriptionColumn, std::ranges::max(subcommandNamesAndDesc
+                        | std::views::keys
+                        | std::views::transform([](const auto& str) {
+                            return str.size();
+                        })));
+                const size_t descCol = std::min(maxDescriptionColumn, usageColumn + maxCmdName + bufferBetweenUsageAndDesc);
+                const size_t descriptionWrapWidth = maxLineWidth - descCol;
+
+                for (const auto& [name, desc] : subcommandNamesAndDesc) {
+                    const auto wrapped = wrap_description(desc, descriptionWrapWidth);
+                    concat_name_and_desc(msg, name, wrapped, descCol);
+                }
+                prevSectionSet = true;
+            }
+
+            // Calculate the column for the description
             const size_t maxOptionUsageLen = optionUsageMessages.empty() ? 0 :
                 std::ranges::max(optionUsageMessages | std::views::transform([](const auto& str) { return str.size(); }));
             const size_t maxPositionalUsageLen = positionalUsageMessages.empty() ? 0 :
                 std::ranges::max(positionalUsageMessages | std::views::transform([](const auto& str) { return str.size(); }));
             const size_t maxUsageLen = std::max(maxOptionUsageLen, maxPositionalUsageLen);
 
-            const size_t descCol = std::min(maxDescriptionColumn, maxUsageLen + usageColumn + bufferBetweenUsageAndDesc);
+            const size_t descCol = std::min(maxDescriptionColumn, usageColumn + maxUsageLen + bufferBetweenUsageAndDesc);
             const size_t descriptionWrapWidth = maxLineWidth - descCol;
 
             const auto optionDescriptions = get_option_descriptions(context, descriptionWrapWidth);
             const auto positionalDescriptions = get_positional_descriptions(context, descriptionWrapWidth);
 
+            // All non-positional usage and description messages
             if (!optionOrders.empty()) {
                 if (prevSectionSet) {
                     msg << "\n";
@@ -1691,27 +1757,12 @@ namespace argon::detail {
                 for (size_t i = 0; i < optionOrders.size(); i++) {
                     const auto& usage = optionUsageMessages[i];
                     const auto& desc = optionDescriptions[i];
-
-                    msg << std::string(usageColumn, ' ') << usage << std::string(bufferBetweenUsageAndDesc, ' ');
-                    if (desc.empty()) {
-                        msg << "\n";
-                        continue;
-                    }
-
-                    if (usageColumn + usage.size() + bufferBetweenUsageAndDesc > descCol) {
-                        msg << "\n";
-                        msg << std::string(descCol, ' ') << desc.at(0) << "\n";
-                    } else {
-                        msg << std::string(descCol - (usageColumn + usage.size() + bufferBetweenUsageAndDesc) , ' ');
-                        msg << desc.at(0) << "\n";
-                    }
-                    for (const auto& str : desc | std::views::drop(1)) {
-                        msg << std::string(descCol, ' ') << str << "\n";
-                    }
+                    concat_name_and_desc(msg, usage, desc, descCol);
                 }
                 prevSectionSet = true;
             }
 
+            // Positional usage and description messages
             if (!positionalUsageMessages.empty()) {
                 if (prevSectionSet) {
                     msg << "\n";
@@ -1721,23 +1772,7 @@ namespace argon::detail {
                 for (size_t i = 0; i < positionalUsageMessages.size(); i++) {
                     const auto& usage = positionalUsageMessages[i];
                     const auto& desc = positionalDescriptions[i];
-
-                    msg << std::string(usageColumn, ' ') << usage << std::string(bufferBetweenUsageAndDesc, ' ');
-                    if (desc.empty()) {
-                        msg << "\n";
-                        continue;
-                    }
-
-                    if (usageColumn + usage.size() + bufferBetweenUsageAndDesc > descCol) {
-                        msg << "\n";
-                        msg << std::string(descCol, ' ') << desc.at(0) << "\n";
-                    } else {
-                        msg << std::string(descCol - (usageColumn + usage.size() + bufferBetweenUsageAndDesc) , ' ');
-                        msg << desc.at(0) << "\n";
-                    }
-                    for (const auto& str : desc | std::views::drop(1)) {
-                        msg << std::string(descCol, ' ') << str << "\n";
-                    }
+                    concat_name_and_desc(msg, usage, desc, descCol);
                 }
             }
             return msg.str();
@@ -2921,15 +2956,17 @@ namespace argon::detail {
 
 namespace argon::detail {
     class CommandBase {
-        friend class Cli;
+        friend class ::argon::Cli;
 
     protected:
         std::string m_name;
+        std::string m_description;
         Context m_context;
         std::vector<std::pair<UniqueId, Polymorphic<CommandBase>>> m_subcommands;
 
     public:
-        explicit CommandBase(const std::string_view name) : m_name(name) {}
+        explicit CommandBase(const std::string_view name, const std::string_view description)
+            : m_name(name), m_description(description) {}
         virtual ~CommandBase() = default;
 
         [[nodiscard]] virtual auto run(const ArgvView& argv) -> std::expected<void, std::vector<std::string>> = 0;
@@ -2948,9 +2985,9 @@ namespace argon {
     private:
         [[nodiscard]] auto run(const detail::ArgvView& argv) -> std::expected<void, std::vector<std::string>> override {
             auto ast = detail::AstBuilder::build(argv, m_context);
-            if (!ast) return std::unexpected(std::vector{std::move(ast.error())});
+            if (!ast.has_value()) return std::unexpected(std::vector{std::move(ast.error())});
 
-            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), m_context); !analysisSuccess) {
+            if (auto analysisSuccess = detail::AstAnalyzer::analyze(ast.value(), m_context); !analysisSuccess.has_value()) {
                 return std::unexpected(std::move(analysisSuccess.error()));
             }
 
@@ -2963,7 +3000,8 @@ namespace argon {
         }
 
     public:
-        explicit Command(const std::string_view name) : CommandBase(name) {}
+        explicit Command(const std::string_view name, const std::string_view description)
+            : CommandBase(name, description) {}
 
         template <typename T>
         [[nodiscard]] auto add_flag(Flag<T> flag) -> FlagHandle<Tag, T> {
@@ -3002,53 +3040,127 @@ namespace argon {
         }
 
         template <typename T>
-        [[nodiscard]] auto add_subcommand(Command<T> subcommand) -> SubcommandHandle<T> {
-            const SubcommandHandle<T> handle;
-            m_subcommands.emplace_back(handle.get_id(), detail::make_polymorphic<CommandBase>(std::move(subcommand)));
-            return handle;
+        [[nodiscard]] auto add_subcommand(Command<T> subcommand) -> CommandHandle<T> {
+            const detail::UniqueId id{};
+            m_subcommands.emplace_back(id, detail::make_polymorphic<CommandBase>(std::move(subcommand)));
+            return CommandHandle<T>{id};
         }
+    };
+
+    struct CliRunError {
+        AnyCommandHandle handle;
+        std::vector<std::string> messages;
     };
 
     class Cli {
         Command<> m_root;
-        std::string m_programName = "program";
-        std::string m_programDescription;
+        detail::UniqueId m_rootId;
         std::optional<detail::UniqueId> m_successfulCommandId;
-    public:
 
+        [[nodiscard]] auto search_subcommand(
+            const detail::UniqueId& searchId
+        ) const -> std::vector<const detail::CommandBase *> {
+            struct SearchNode {
+                int32_t parentIndex = -1; // Index of parent in cmdList
+                const detail::CommandBase *cmd = nullptr;
+            };
+
+            std::vector<SearchNode> cmdList;
+            std::queue<int32_t> nodesToVisit;
+
+            if (searchId == m_rootId) {
+                return std::vector<const detail::CommandBase *>{&m_root};
+            }
+
+            cmdList.emplace_back(SearchNode{
+                .parentIndex = -1,
+                .cmd = &m_root
+            });
+            nodesToVisit.push(0);
+
+            while (!nodesToVisit.empty()) {
+                const int32_t currentIndex = nodesToVisit.front();
+                nodesToVisit.pop();
+
+                const auto& [parentIndex, cmd] = cmdList.at(currentIndex);
+                for (const auto& [subId, subCmd] : cmd->m_subcommands) {
+                    if (subId == searchId) {
+                        std::vector path = {subCmd.get()};
+
+                        int32_t index = currentIndex;
+                        while (index != -1) {
+                            path.push_back(cmdList.at(index).cmd);
+                            index = cmdList.at(index).parentIndex;
+                        }
+
+                        std::ranges::reverse(path);
+                        return path;
+                    }
+
+                    const auto childIndex = static_cast<int32_t>(cmdList.size());
+                    cmdList.emplace_back(SearchNode{
+                        .parentIndex = currentIndex,
+                        .cmd = subCmd.get()}
+                    );
+                    nodesToVisit.push(childIndex);
+                }
+            }
+
+            throw std::runtime_error("No subcommand with this ID exists");
+        }
+
+        [[nodiscard]] auto get_help_message(const detail::UniqueId& id) const -> std::string {
+            const std::vector<const detail::CommandBase *> path = search_subcommand(id);
+
+            const auto subcommands = path.back()->m_subcommands
+                | std::views::values
+                | std::views::transform([](const detail::Polymorphic<detail::CommandBase>& cmd) {
+                    return std::pair<std::string_view, std::string_view>{
+                        cmd->m_name, cmd->m_description
+                    };
+                })
+                | std::ranges::to<std::vector>();
+
+            const auto name = std::ranges::fold_left(path | std::views::drop(1), path.at(0)->m_name,
+                [](std::string acc, const detail::CommandBase *cmd) {
+                    acc += " " + cmd->m_name;
+                    return acc;
+                }
+            );
+
+            return detail::HelpMessageBuilder::build(path.back()->m_context, subcommands, name, path.back()->m_description);
+        }
+
+    public:
         explicit Cli(Command<> root_) : m_root(std::move(root_)) {}
 
-        auto with_program_description(const std::string_view desc) & -> Cli& {
-            m_programDescription = desc;
-            return *this;
+        [[nodiscard]] auto get_help_message(const AnyCommandHandle& handle) const -> std::string {
+            return get_help_message(handle.get_id());
         }
 
-        auto with_program_description(const std::string_view desc) && -> Cli&& {
-            m_programDescription = desc;
-            return std::move(*this);
+        template <typename T>
+        [[nodiscard]] auto get_help_message(const CommandHandle<T>& handle) const -> std::string {
+            return get_help_message(handle.get_id());
         }
 
-        [[nodiscard]] auto get_help_message() const -> std::string {
-            return detail::HelpMessageBuilder::build(m_root.m_context, m_programName, m_programDescription);
-        }
-
-        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, std::vector<std::string>> {
+        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, CliRunError> {
             detail::ArgvView view{argc, argv};
-            m_programName = std::filesystem::path(view.next()).filename().string();
+            m_root.m_name = std::filesystem::path(view.next()).filename().string();
 
-            detail::CommandBase *cmd = &m_root;
+            detail::CommandBase *selectedCmd = &m_root;
+            detail::UniqueId selectedId = m_rootId;
             while (true) {
-                if (cmd->m_subcommands.empty() || view.get_pos() >= view.size()) {
+                if (selectedCmd->m_subcommands.empty() || view.get_pos() >= view.size()) {
                     break;
                 }
 
                 const std::string_view token = view.peek();
                 bool subcommandFound = false;
-                for (auto& [id, subcommand] : cmd->m_subcommands) {
+                for (auto& [id, subcommand] : selectedCmd->m_subcommands) {
                     if (token == subcommand->m_name) {
                         subcommandFound = true;
-                        m_successfulCommandId = id;
-                        cmd = subcommand.get();
+                        selectedId = id;
+                        selectedCmd = subcommand.get();
                         view.next();
                         break;
                     }
@@ -3060,54 +3172,45 @@ namespace argon {
                 }
 
                 std::string subcommands = std::ranges::fold_left(
-                    cmd->m_subcommands | std::views::values | std::views::drop(1), cmd->m_subcommands[0].second->m_name,
+                    selectedCmd->m_subcommands | std::views::values | std::views::drop(1), selectedCmd->m_subcommands[0].second->m_name,
                     [](const std::string& acc, const detail::Polymorphic<detail::CommandBase>& subcommand) -> std::string {
                         return acc + ", " + subcommand->m_name;
                     }
                 );
-                return std::unexpected(std::vector{std::format(
-                    "Unknown subcommand '{}'. Valid subcommands are: {}",
-                    token, subcommands)});
+                return std::unexpected(CliRunError{
+                    .handle = AnyCommandHandle{selectedId},
+                    .messages = std::vector{std::format(
+                        "Unknown subcommand '{}'. Valid subcommands are: {}",
+                        token, subcommands)}
+                });
             }
 
-            return cmd->run(view);
+            auto runSuccess = selectedCmd->run(view);
+            if (!runSuccess.has_value()) {
+                return std::unexpected(CliRunError{
+                    .handle = AnyCommandHandle{selectedId},
+                    .messages = std::move(runSuccess.error())
+                });
+            }
+
+            m_successfulCommandId = selectedId;
+            return {};
         }
 
-        [[nodiscard]] auto was_root_selected() const -> bool {
-            return m_successfulCommandId == std::nullopt;
+        [[nodiscard]] auto get_root_handle() const -> CommandHandle<RootCommandTag> {
+            const CommandHandle<RootCommandTag> handle{m_rootId};
+            return handle;
         }
 
         template <typename CmdTag>
-        [[nodiscard]] auto was_subcommand_selected(const SubcommandHandle<CmdTag>& handle) const -> bool {
-            return m_successfulCommandId.has_value() && handle.get_id() == m_successfulCommandId.value();
-        }
-
-        [[nodiscard]] auto get_root_results() const -> Results<> {
-            return Results{m_root.m_context};
-        }
-
-        template <typename CmdTag>
-        [[nodiscard]] auto get_subcommand_results(const SubcommandHandle<CmdTag>& handle) const -> Results<CmdTag> {
-            std::queue<std::pair<detail::UniqueId, const detail::CommandBase *>> m_nodesToVisit;
-            for (const auto& [id, subcommand] : m_root.m_subcommands) {
-                m_nodesToVisit.emplace(id, subcommand.get());
+        [[nodiscard]] auto try_get_results(const CommandHandle<CmdTag>& handle) const -> std::optional<Results<CmdTag>> {
+            if (m_successfulCommandId == std::nullopt) return std::nullopt;
+            if (handle.get_id() != m_successfulCommandId) return std::nullopt;
+            if (handle.get_id() == m_rootId) {
+                return Results<CmdTag>{m_root.m_context};
             }
-
-            while (!m_nodesToVisit.empty()) {
-                const auto& [id, cmd] = m_nodesToVisit.front();
-                if (id == handle.get_id()) {
-                    return Results<CmdTag>(cmd->m_context);
-                }
-                for (const auto& [subId, subCmd] : cmd->m_subcommands) {
-                    if (subId == handle.get_id()) {
-                        return Results<CmdTag>(subCmd->m_context);
-                    }
-                    m_nodesToVisit.emplace(subId, subCmd.get());
-                }
-                m_nodesToVisit.pop();
-            }
-
-            throw std::runtime_error("No subcommand with this ID exists");
+            const std::vector<const detail::CommandBase *> subCmd = search_subcommand(handle.get_id());
+            return Results<CmdTag>{subCmd.back()->m_context};
         }
     };
 } // namespace argon
