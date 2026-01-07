@@ -18,7 +18,6 @@
 #include <variant>
 #include <vector>
 #include <queue>
-#include <pstl/algorithm_impl.h>
 
 #include "argon.hpp"
 
@@ -372,6 +371,15 @@ namespace argon::detail {
     protected:
         std::vector<ValueValidator<T>> m_validators;
 
+        auto apply_value_validator(const T& value) -> std::expected<void, std::string> {
+            for (const auto& validator : m_validators) {
+                if (!validator.function(value)) {
+                    return std::unexpected(validator.errorMsg);
+                }
+            }
+            return {};
+        }
+
     public:
         auto with_value_validator(std::function<bool(const T&)> validationFn, const std::string_view errorMsg) & -> Derived& {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
@@ -382,15 +390,6 @@ namespace argon::detail {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&&>(*this);
         }
-
-        auto apply_value_validator(const T& value) -> std::expected<void, std::string> {
-            for (const auto& validator : m_validators) {
-                if (!validator.function(value)) {
-                    return std::unexpected(validator.errorMsg);
-                }
-            }
-            return {};
-        }
     };
 
     template <typename Derived, typename T>
@@ -398,6 +397,15 @@ namespace argon::detail {
     protected:
         std::vector<GroupValidator<T>> m_validators;
 
+        auto apply_group_validator(const std::vector<T>& value) -> std::expected<void, std::string> {
+            for (const auto& validator : m_validators) {
+                if (!validator.function(value)) {
+                    return std::unexpected(validator.errorMsg);
+                }
+            }
+            return {};
+        }
+        
     public:
         auto with_group_validator(std::function<bool(const std::vector<T>&)> validationFn, const std::string_view errorMsg) & -> Derived& {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
@@ -407,15 +415,6 @@ namespace argon::detail {
         auto with_group_validator(std::function<bool(const std::vector<T>&)> validationFn, const std::string_view errorMsg) && -> Derived&& {
             m_validators.emplace_back(std::move(validationFn), std::string(errorMsg));
             return static_cast<Derived&&>(*this);
-        }
-
-        auto apply_group_validator(const std::vector<T>& value) -> std::expected<void, std::string> {
-            for (const auto& validator : m_validators) {
-                if (!validator.function(value)) {
-                    return std::unexpected(validator.errorMsg);
-                }
-            }
-            return {};
         }
     };
 } // namespace argon::detail
