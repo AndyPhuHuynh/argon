@@ -38,7 +38,7 @@ auto input_handle = root.add_positional(
 );
 ```
 
-### Create the Cli
+### Create the CLI
 ```c++
 argon::Cli cli{root};
 ```
@@ -89,6 +89,8 @@ A `Command` can optionally be **tagged** by providing a template parameter:
 ```c++
 argon::Command<struct Tag>("name", "description")
 ```
+The default tag, if no tag is provided, is argon::RootCommandTag
+
 The tag is a unique type used to associate related types with a specific subcommand. This tag appears in places such as
 argument handles and the `Results` object (both explained later)
 
@@ -272,7 +274,7 @@ auto features = cmd.add_multi_choice(
 //        ./app                                 (sets to [1, 2], default)
 ```
 
-# The Cli
+# The CLI
 After creating the root command and adding all your arguments, you can create a Cli object like so:
 ```c++
 auto root = argon::Command("name", "description");
@@ -281,14 +283,14 @@ auto cli = argon::Cli{root};
 ```
 
 ## Getting a help message
-Once you have the cli created, you can get a help message by calling `Cli::get_help_message(command_handle)`. 
+Once you have the CLI created, you can get a help message by calling `Cli::get_help_message(command_handle)`. 
 Users may either pass in a handle for the root command or a handle to a subcommand (discussed later).
 To get the handle for the root command users can call `Cli::get_root_handle()`;
 ```c++
 std::string help_msg = cli.get_help_message(cli.get_root_handle());
 ```
 
-## Running the Cli
+## Running the CLI
 You can parse command line arguments like so:
 ```c++
 if (auto run = cli.run(argc, argv); !run.has_value()) {
@@ -315,7 +317,7 @@ The optional contains a value if that command was selected to run. Otherwise, it
 The result can be queried like so:
 ```c++
 if (const auto results = cli.try_get_results(cli.get_root_handle())) {
-    std::optional<int threads = results->get(threads_handle);
+    std::optional<int threads> = results->get(threads_handle);
     std::vector<char> chars = results->get(chars_handle);
 }
 ```
@@ -338,6 +340,7 @@ is_specified is the preferred way of checking if an option was provided.
 
 ### `.with_input_hint(hint)`
 Available on: **Choice/MultiChoice**
+
 Customizes the placeholder name in help messages
 ```c++
 .with_input_hint("port") 
@@ -346,6 +349,7 @@ Customizes the placeholder name in help messages
 
 ### `.with_description(description)`
 Available on: **All argument types**
+
 Provides a description to be displayed in the generated help message
 ```c++
 .with_description("Number of worker threads");
@@ -353,6 +357,7 @@ Provides a description to be displayed in the generated help message
 
 ### `.with_default(value)`
 Available on: **All argument types**
+
 Sets the default value when the argument is not specified
 ```c++
 .with_default(4)            // Single value
@@ -361,6 +366,7 @@ Sets the default value when the argument is not specified
 
 ### `.with_implicit(value)`
 Available on: **Not available on Positional/MultiPositional**
+
 Sets the value when the flag is present, but no explicit value is provided
 ```c++
 .with_implicit(4)            // Single value
@@ -369,6 +375,7 @@ Sets the value when the flag is present, but no explicit value is provided
 
 ### `.with_alias(alias)`
 Available on: **Not available on Positional/MultiPositional**
+
 Adds an alternative name for the argument (can be called multiple times)
 ```c++
 .with_alias("-t")
@@ -378,6 +385,7 @@ Adds an alternative name for the argument (can be called multiple times)
 
 ### Value Validators
 Available on: **Flag, MultiFlag, Positional, MultiPositional**
+
 Validate individual argument values. `with_value_validator(func, msg)` method has two parameters:
 
 1) `func`:  Any callable object which has one parameter, a const reference to a type T, and returns a boolean 
@@ -397,6 +405,30 @@ auto files_handle = cmd.add_multi_positional(
         .with_value_validator(
             [](const std::filesystem::path& file) { return std::filesystem::exists(file); },
             "file must exist")
+);
+
+```
+## Custom conversions for user-defined datatypes
+Available: **All argument types**
+
+The `with_conversion_fn` method can be used to define a custom conversion function for user-defined datatypes.
+
+`with_conversion_fn` accepts any callable object that takes in a `std::string_view` and returns a `std::optional<T>`, 
+where T is the user-defined type. The callable should return a `std::nullopt` to indicate that the conversion has failed.
+
+An additional overload of `with_conversion_fn` allows an explicit error message to be provided. In this overload, the 
+callable is passed as the first argument, and a string describing the conversion failure is described as the second 
+argument. This error message is reported to the user if conversion fails.
+
+```c++
+struct Student {
+    std::string name;
+};
+
+auto student_handle = cmd.add_flag(argon::Flag<Student>("--student")
+    .with_conversion_fn([](const std::string_view arg) -> std::optional<Student> {
+        return Student { .name = std::string(arg) };
+    })
 );
 ```
 
@@ -422,20 +454,136 @@ auto items = cmd.add_multi_flag(
 ```
 
 # Constraints
-Constraints provide a way to define relationships between arguments.
+Constraints provide a way to define relationships between arguments, allowing you to enforce higher-level validation 
+rules beyond basic type checking.
+
+Constraints are expressed using `Condition` objects. Which evaluate whether a particular requirement is satisfied based
+on the parsed results.
 
 ## Creating Condition Objects
-Users are provided with five factory functions to create Condition objects, which can later be used to specify constraints
+Argon provides a set of factory functions for constructing `Condition` objects. These conditions can later be combined
+and attached to commands to enforce constraints. 
 
-- `argon::present(handle)` accepts a flag handle and returns a Condition object representing if the corresponding option
-was provided by the user
-- `argon::absent(handle)` accepts a flag handle and returns a Condition object representing if the corresponding
-option was not provided by the user
-- `argon::exactly(num, handles...)` accepts a threshold number and one or more flag handles. Represents if, out of all
-the provided options, exactly threshold number of options was provided by the user
-- `argon::at_least(num, handles...)` accepts a threshold number and one or more flag handles. Represents if, out of all
-  the provided options, at least threshold number of options was provided by the user
-- `argon::at_most(num, handles...)` accepts a threshold number and one or more flag handles. Represents if, out of all
-  the provided options, at most threshold number of options was provided by the user
-- `argon::condition()`
-###
+### Presence-based conditions
+- `argon::present(handle)` Returns a condition that is satisfied if the specified argument was explicitly provided by the user.
+- `argon::absent(handle)` Returns a condition that is satisfied if the specified argument was **not** provided by the user.
+
+### Cardinality-based conditions
+- `argon::exactly(count, handles...)` Returns a condition that is satisfied if **exactly** `count` of the specified 
+arguments were provided.
+- `argon::at_least(count, handles...)` Returns a condition that is satisfied if **at least** `count` of the specified
+  arguments were provided.
+- `argon::at_most(count, handles...)` Returns a condition that is satisfied if **at most** `count` of the specified
+  arguments were provided.
+
+### Custom conditions
+- `argon::condition<CommandTag>(callable)` Creates a condition from a user-provided callable. The callable receives a 
+`const Results<CommandTag>&` and returns a boolean indicating whether the condition is satisfied.
+
+
+## Using Condition Objects
+Constraints are applied through the `constraints` interface, which can be accessed via `cmd.constraints`.
+
+### Requiring conditions
+The `constraints` object provides a `require` method:
+- `require(condition, description)`
+
+This method specifies that a given `Condition` must be satisfied. If the condition evaluates to false, parsing fails 
+and the provided description is reported as an error message.
+
+```c++
+cmd.constraints.require(
+    argon:present(input_handle),
+    "An input file must be provided"
+);
+```
+
+### Conditional requirements with when
+In addition to unconditional requirements, constraints may be applied conditionally using the `when` method:
+- `when(precondition, description)`
+
+The `when` method introduces a precondition. Any requirements chained after `when` are only evaluated if the 
+precondition itself is satisfied. If the precondition is not met, the requirements are ignored.
+
+```c++
+cmd.constraints.when(
+    argon::present(output_handle), 
+    "When flag --output is specified"
+).require(
+    argon::present(format_handle),
+    "An output format must be specified"
+);
+```
+
+## Combining Conditions
+`Condition` objects support logical composition using the following operators:
+- `&` logical AND
+- `|` logical OR
+- `!` logical NOT
+
+```c++
+cmd.constraints.when(
+    argon::present(threads_handle) & argon::present(gcc_handle),
+    "When --threads and -gcc are present"
+).require(
+    argon::condition<argon::RootCommandTag>([&threads_handle](const Result<>& results) {
+        std::optional<int> threads = results.get(threads_handle);
+        return threads.has_value() && threads.value() >= 4
+    }),
+    "--threads must be at least 4"
+);
+```
+
+# Subcommands
+Argon has first-class support for **subcommands**.
+
+A subcommand is defined by creating a `Command` object and adding it to another command. Subcommands may themselves 
+contain additional subcommands, allowing arbitrary nesting.
+
+Subcommands are configured in the same way as the root command, including argument definitions and constraints.
+
+```c++
+auto build_cmd = argon::Command<struct BuildCmdTag>("build", "Build the project");
+// add arguments to build_cmd...
+
+// create main command and add subcommand
+auto root_cmd = argon::Command("root", "Description of the program");
+auto build_cmd_handle = root_cmd.add_subcommand(std::move(build_cmd));
+
+// create the CLI and use like normal
+auto cli = argon::Cli{root_cmd};
+```
+
+It is recommended that subcommands be tagged with a unique tag. This allows misuse of argument handles and results
+across commands to be caught at compile time.
+
+**Note**: The root command must remain untagged (that is, tagged with argon::RootCommandTag), as it represents the 
+entry point of the CLI.
+
+The `Command::add_subcommand` method will return a subcommand handle. After running the Cli, this handle will be used 
+to query the CLI and acquire the results associated with that subcommand.
+
+```c++
+if (const auto root_results = cli.try_get_results(cli.get_root_handle())) {
+    // Use root results
+} else if (const auto build_results = cli.try_get_results(build_cmd_handle)) {
+    // Use build results
+}
+```
+
+Only the command selected by the user will produce results. All other result queries will return `std::nullopt`.
+
+### Example invocation
+```text
+# Invokes the root command. Only arguments added to the root command are valid.
+# Arguments added to the build and release commands are invalid.
+./app --help
+
+# Invokes the build subcommand. Only arguments added to the build subcommand are valid.
+# Arguments added to the root and release commands are invalid.
+./app build --threads 8   
+
+# Invokes the nested "build release" subcommand. Only arguments added to the release subcommand are valid.
+# Arguments added to the root and build commands are invalid.
+./app build release --verbose  
+```

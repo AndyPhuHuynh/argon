@@ -273,6 +273,7 @@ namespace argon::detail {
             return result.value();
         }
 
+    public:
         auto with_conversion_fn(const ConversionFn<T>& conversionFn) & -> Derived& {
             m_conversionFn = conversionFn;
             return static_cast<Derived&>(*this);
