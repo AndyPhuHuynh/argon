@@ -200,7 +200,7 @@ namespace argon::detail {
         return arg[0];
     }
 
-    template <typename> struct TypeDisplayName     { constexpr static std::string_view value = "unknown"; };
+    template <typename> struct TypeDisplayName     { constexpr static std::string_view value = "unknown type"; };
     template<> struct TypeDisplayName<int8_t>      { constexpr static std::string_view value = "signed 8-bit integer"; };
     template<> struct TypeDisplayName<uint8_t>     { constexpr static std::string_view value = "unsigned 8-bit integer"; };
     template<> struct TypeDisplayName<int16_t>     { constexpr static std::string_view value = "signed 16-bit integer"; };
@@ -214,6 +214,8 @@ namespace argon::detail {
     template<> struct TypeDisplayName<long double> { constexpr static std::string_view value = "floating-point number"; };
     template<> struct TypeDisplayName<bool>        { constexpr static std::string_view value = "boolean"; };
     template<> struct TypeDisplayName<char>        { constexpr static std::string_view value = "character"; };
+    template<> struct TypeDisplayName<std::string> { constexpr static std::string_view value = "string"; };
+    template<> struct TypeDisplayName<std::filesystem::path> { constexpr static std::string_view value = "filepath"; };
 
     template <typename T>
     using ConversionFn = std::function<std::optional<T>(std::string_view)>;
