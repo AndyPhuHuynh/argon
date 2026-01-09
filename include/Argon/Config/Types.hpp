@@ -18,14 +18,6 @@ namespace Argon {
         ExpectAscii,
         ExpectInteger,
     };
-
-    enum class PositionalPolicy {
-        UseDefault = 0,
-        Interleaved,
-        BeforeFlags,
-        AfterFlags,
-    };
-
 } // End namespace Argon
 
 namespace Argon::detail {
@@ -60,6 +52,26 @@ namespace Argon::detail {
 
 } // End namespace Argon::detail
 
+namespace Argon {
+    struct ConversionFns {
+        ConversionFnMap conversions;
+        template <typename ...Fns> explicit ConversionFns(Fns... fns);
+    };
+
+    template <typename T>
+    struct RegisterConversion   { ConversionFn<T> fn; };
+    struct SetCharMode          { CharMode mode; };
+    struct SetFlagPrefixes {
+        std::vector<std::string_view> prefixes;
+        template <typename ...Strings> explicit SetFlagPrefixes(Strings... _prefixes);
+    };
+
+    template <typename T> struct BoundMin   { T min; };
+    template <typename T> struct BoundMax   { T max; };
+    template <typename T> struct Bounds     { T min, max; };
+} // End namespace Argon
+
+//---------------------------------------------------Implementations----------------------------------------------------
 
 template<typename T> requires Argon::detail::is_non_bool_number<T>
 auto Argon::detail::IntegralBounds<T>::clone() const -> std::unique_ptr<IntegralBoundsBase> {
@@ -93,5 +105,14 @@ auto Argon::detail::addConversionFn(ConversionFnMap& map, F&& fn) -> void {
     map[std::type_index(typeid(T))] = wrapper;
 }
 
+template<typename... Fns>
+Argon::ConversionFns::ConversionFns(Fns... fns) {
+    (detail::addConversionFn(conversions, fns), ...);
+}
+
+template<typename ... Strings>
+Argon::SetFlagPrefixes::SetFlagPrefixes(Strings... _prefixes) {
+    (prefixes.emplace_back(_prefixes), ...);
+}
 
 #endif // ARGON_CONFIG_TYPES_INCLUDE

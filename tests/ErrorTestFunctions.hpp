@@ -45,6 +45,16 @@ inline auto CheckMessage(const Argon::ErrorMessage& error, const std::initialize
     }
 }
 
+inline auto CheckMessage(const Argon::ErrorMessage& error, const std::initializer_list<std::string_view> expectedMsgs,
+                         Argon::ErrorType type) {
+    CAPTURE(expectedMsgs, type);
+    CAPTURE(error.msg, error.pos, error.type);
+    CHECK(error.type == type);
+
+    for (const auto& msg : expectedMsgs) {
+        CHECK_THAT(error.msg, Catch::Matchers::ContainsSubstring(std::string(msg)));
+    }
+}
 
 inline auto CheckGroup(const Argon::ErrorGroup& group, const std::string_view groupName,
     const int start, const int end, const size_t errorCount) -> const Argon::ErrorGroup& {
@@ -60,6 +70,18 @@ inline auto CheckGroup(const Argon::ErrorGroup& group, const std::string_view gr
     REQUIRE(errors.size() == errorCount);
 
     return group;
+}
+
+inline auto CheckSyntaxErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Syntax Errors", -1, -1, errorCount);
+}
+
+inline auto CheckAnalysisErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Analysis Errors", -1, -1, errorCount);
+}
+
+inline auto CheckConstraintErrorGroup(const Argon::ErrorGroup& group, const size_t errorCount) {
+    CheckGroup(group, "Constraint Errors", -1, -1, errorCount);
 }
 
 inline auto DigitToString(const int i) {

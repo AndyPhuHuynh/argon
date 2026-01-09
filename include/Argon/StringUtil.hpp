@@ -110,6 +110,13 @@ inline bool containsWhitespace(const char *str) {
     return false;
 }
 
+inline auto startsWithAny(const std::string_view str, const std::vector<std::string>& prefixes) -> bool {
+return std::ranges::any_of(prefixes, [str](const std::string_view prefix) {
+    return str.starts_with(prefix);
+});
+
+}
+
 
 } // End namespace Argon
 

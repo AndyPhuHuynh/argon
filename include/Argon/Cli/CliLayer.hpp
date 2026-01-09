@@ -3,9 +3,9 @@
 
 #include <memory>
 
-#include "Argon/Cli/SubcommandPath.hpp"
 #include "Argon/Config/Config.hpp"
 #include "Argon/Scanner.hpp"
+#include "Argon/PathBuilder.hpp"
 
 namespace Argon {
     class Context;
@@ -21,7 +21,7 @@ namespace Argon {
             requires (std::is_rvalue_reference_v<Parts&&> && ...)
         explicit CliLayer(Parts&&... parts);
 
-        auto validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void;
+        auto validate(PathBuilder& subcommandPath, ErrorGroup& validationErrors) const -> void;
         auto resolveConfig(const Config *parentConfig) -> void;
         auto run(Scanner& scanner, CliErrors& errors) const -> void;
     private:
@@ -31,6 +31,8 @@ namespace Argon {
     };
 }
 
+// --------------------------------------------- Implementations -------------------------------------------------------
+
 #include "Argon/Cli/DefaultCommand.hpp"
 #include "Argon/Cli/Subcommands.hpp"
 
@@ -39,18 +41,18 @@ Argon::CliLayer::CliLayer(Parts&&... parts) {
     (addPart(std::move(parts)), ...);
 }
 
-inline auto Argon::CliLayer::validate(SubcommandPath& path, ErrorGroup& validationErrors) const -> void {
+inline auto Argon::CliLayer::validate(PathBuilder& subcommandPath, ErrorGroup& validationErrors) const -> void {
     if (m_defaultCommand == nullptr &&
         (m_subcommands == nullptr || m_subcommands->getCommands().empty())) {
         validationErrors.addErrorMessage(
             std::format(
-                R"(In subcommand "{}" "Empty CLiLayer found. )"
-                R"(CliLayer must include either at least one subcommand or a default command.)", path.toString()),
+                R"(In subcommand "{}", empty CLiLayer found. )"
+                R"(CliLayer must include either at least one subcommand or a default command.)", subcommandPath.toString(" ")),
             -1, ErrorType::Validation_EmptyCliLayer);
         return;
         }
     if (m_subcommands) {
-        m_subcommands->validate(path, validationErrors);
+        m_subcommands->validate(subcommandPath, validationErrors);
     }
     if (m_defaultCommand) {
         m_defaultCommand->validate(validationErrors);
@@ -64,10 +66,10 @@ inline auto Argon::CliLayer::resolveConfig(const Config *parentConfig) -> void {
         m_config = detail::resolveConfig(*parentConfig, m_config);
     }
     if (m_subcommands) {
-        m_subcommands->resolveConfig(parentConfig);
+        m_subcommands->resolveConfig(&m_config);
     }
     if (m_defaultCommand) {
-        m_defaultCommand->resolveConfig(parentConfig);
+        m_defaultCommand->resolveConfig(&m_config);
     }
 }
 
@@ -87,15 +89,15 @@ inline auto Argon::CliLayer::run(Scanner& scanner, CliErrors& errors) const -> v
     }
 }
 
-inline auto Argon::CliLayer::addPart(Subcommands&& part) {
+inline auto Argon::CliLayer::addPart(Subcommands&& part) -> void {
     m_subcommands = std::make_unique<Subcommands>(std::move(part));
 }
 
-inline auto Argon::CliLayer::addPart(DefaultCommand&& part) {
+inline auto Argon::CliLayer::addPart(DefaultCommand&& part) -> void{
     m_defaultCommand = std::make_unique<DefaultCommand>(std::move(part));
 }
 
-inline auto Argon::CliLayer::addPart(Config&& part) {
+inline auto Argon::CliLayer::addPart(Config&& part) -> void {
     m_config = std::move(part);
 }
 
