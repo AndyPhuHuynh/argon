@@ -1,5 +1,5 @@
 #include <iostream>
-#include "argon.hpp"
+#include "../argon.hpp"
 
 int main(const int argc, const char *argv[]) {
     auto debug_cmd = argon::Command<struct DebugCmdTag>("debug", "Build as debug");

@@ -14,7 +14,27 @@ and constraint validation
 - Header-only library with no external dependencies
 
 ## Installation
-Argon is a header-only library. Simply add `argon.hpp` to your project and compile with a C++23-compatible compiler.
+Argon is a header-only library that requires a C++23 compatible compiler. 
+
+### Quick Install
+Simply add `argon.hpp` to your project and compile with a C++23-compatible compiler.
+
+### Cmake Integration
+For projects using CMake, Argon provides configuration files for easy integration.
+
+#### 1. Build and install Argon
+```text
+cmake -S . -B build
+cmake --build build
+cmake --install build
+```
+
+#### 2. Use Argon in your project
+Add to your project's `CMakeLists.txt`:
+```cmake
+find_package(Argon REQUIRED)
+target_link_libraries(YourTarget PRIVATE Argon::Argon)
+```
 
 ## Quick Start
 Below is a minimal example demonstrating basic usage:
