@@ -14,6 +14,12 @@ add_executable(ArgonTests)
 target_sources(ArgonTests
     PRIVATE
         types/builtin_types.cpp
+        types/custom_types.cpp
+
+    PRIVATE
+        FILE_SET HEADERS
+        FILES
+            helpers/cli_test_helpers.hpp
 )
 
 target_link_libraries(ArgonTests
