@@ -1186,6 +1186,12 @@ namespace argon {
     using AnyCommandHandle = Handle<struct AnyCommandTag, void, struct AnyCommandTag>;
 
     template <typename T>
+    concept IsSingleValueHandleTag =
+        std::is_same_v<T, FlagTag> ||
+        std::is_same_v<T, PositionalTag> ||
+        std::is_same_v<T, ChoiceTag>;
+
+    template <typename T>
     struct is_argument_handle : std::false_type {};
 
     template <typename CommandTag, typename Value, typename Tag>
@@ -1786,10 +1792,10 @@ namespace argon::detail {
 namespace argon::detail {
     class ArgvView {
         size_t m_pos = 0;
-        std::span<const char *> m_argv;
+        std::span<const char * const> m_argv;
 
     public:
-        ArgvView(const int argc, const char **argv) : m_argv(argv, argc) {}
+        ArgvView(const int argc, const char * const * argv) : m_argv(argv, argc) {}
 
         [[nodiscard]] auto get_pos() const -> size_t {
             return m_pos;
@@ -1814,8 +1820,6 @@ namespace argon::detail {
 
     enum class TokenKind {
         STRING,
-        LEFT_BRACKET,
-        RIGHT_BRACKET,
         DOUBLE_DASH,
     };
 
@@ -1826,8 +1830,6 @@ namespace argon::detail {
     };
 
     inline auto token_kind_from_string(const std::string_view token) -> TokenKind {
-        if (token == "[") return TokenKind::LEFT_BRACKET;
-        if (token == "]") return TokenKind::RIGHT_BRACKET;
         if (token == "--") return TokenKind::DOUBLE_DASH;
         return TokenKind::STRING;
     }
@@ -2110,11 +2112,6 @@ namespace argon::detail {
         [[nodiscard]] static auto parse_root(Tokenizer& tokenizer, const Context& context) -> std::expected<AstContext, std::string> {
             AstContext astContext;
             while (const auto optToken = tokenizer.peek_token()) {
-                if (optToken->kind == TokenKind::LEFT_BRACKET || optToken->kind == TokenKind::RIGHT_BRACKET) {
-                    return std::unexpected(std::format(
-                        "Unexpected token '{}' found at position {}",
-                        optToken->image, optToken->argvPosition));
-                }
                 if (optToken->kind == TokenKind::DOUBLE_DASH) {
                     tokenizer.next_token();
                     while (tokenizer.peek_token()) {
@@ -3084,8 +3081,8 @@ namespace argon {
                 const int32_t currentIndex = nodesToVisit.front();
                 nodesToVisit.pop();
 
-                const auto& [parentIndex, cmd] = cmdList.at(currentIndex);
-                for (const auto& [subId, subCmd] : cmd->m_subcommands) {
+                for (const auto& [parentIndex, cmd] = cmdList.at(currentIndex);
+                    const auto& [subId, subCmd] : cmd->m_subcommands) {
                     if (subId == searchId) {
                         std::vector path = {subCmd.get()};
 
@@ -3145,7 +3142,7 @@ namespace argon {
             return get_help_message(handle.get_id());
         }
 
-        [[nodiscard]] auto run(const int argc, const char **argv) -> std::expected<void, CliRunError> {
+        [[nodiscard]] auto run(const int argc, const char * const *argv) -> std::expected<void, CliRunError> {
             detail::ArgvView view{argc, argv};
             m_root.m_name = std::filesystem::path(view.next()).filename().string();
 
@@ -3187,8 +3184,7 @@ namespace argon {
                 });
             }
 
-            auto runSuccess = selectedCmd->run(view);
-            if (!runSuccess.has_value()) {
+            if (auto runSuccess = selectedCmd->run(view); !runSuccess.has_value()) {
                 return std::unexpected(CliRunError{
                     .handle = AnyCommandHandle{selectedId},
                     .messages = std::move(runSuccess.error())
