@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "catch2/catch_test_macros.hpp"
+#include "catch2/catch_approx.hpp"
 
 #include "argon/argon.hpp"
 
@@ -46,6 +47,12 @@ inline void REQUIRE_RUN_CLI(argon::Cli& cli, const Argv& args) {
     REQUIRE(run.has_value());
 }
 
+inline auto REQUIRE_ERROR_ON_RUN(argon::Cli& cli, const Argv& args) -> argon::CliRunError {
+    auto run = cli.run(args.argc(), args.argv.data());
+    REQUIRE_FALSE(run.has_value());
+    return std::move(run.error());
+}
+
 template <typename CmdTag>
 auto REQUIRE_COMMAND(const argon::Cli& cli, argon::CommandHandle<CmdTag> cmdHandle) -> argon::Results<CmdTag> {
     const auto results = cli.try_get_results(cmdHandle);
@@ -66,4 +73,15 @@ auto CHECK_SINGLE_RESULT(
     std::optional<ValueType> actual = results.get(handle);
     CHECK(actual.has_value());
     CHECK(actual.value() == expected);
+}
+
+template <typename CmdTag, typename ValueType, typename Tag> requires argon::IsSingleValueHandleTag<Tag>
+auto CHECK_SINGLE_FLOAT(
+    const argon::Results<CmdTag>& results,
+    const argon::Handle<CmdTag, ValueType, Tag>& handle,
+    const ValueType& expected
+) {
+    std::optional<ValueType> actual = results.get(handle);
+    CHECK(actual.has_value());
+    CHECK(actual.value() == Catch::Approx(expected));
 }

@@ -153,8 +153,12 @@ namespace argon::detail {
         const auto base = get_base_from_prefix(arg);
         if (base == Base::Invalid) return std::nullopt;
 
-        // Calculate begin offset
         const bool hasSignPrefix = arg[0] == '-' || arg[0] == '+';
+        if constexpr (std::is_unsigned_v<T>) {
+            if (hasSignPrefix) return std::nullopt;
+        }
+
+        // Calculate begin offset
         size_t beginOffset = 0;
         if (base != Base::Decimal)  { beginOffset += 2; }
         if (hasSignPrefix)          { beginOffset += 1; }
@@ -170,12 +174,27 @@ namespace argon::detail {
 
         // Calculate begin and end pointers
         const char *begin = noBasePrefix.data();
-        const char *end   = noBasePrefix.data() + noBasePrefix.size();
-        if (begin == end) return std::nullopt;
+        if (const char *end = noBasePrefix.data() + noBasePrefix.size(); begin == end) return std::nullopt;
 
         T out;
-        auto [ptr, ec] = std::from_chars(begin, end, out, static_cast<int>(base));
-        if (const bool success = ec == std::errc() && ptr == end; !success) return std::nullopt;
+        size_t index = 0;
+        try {
+            if constexpr (std::is_signed_v<T>) {
+                long long x = std::stoll(noBasePrefix, &index, static_cast<int>(base));
+                if (x < std::numeric_limits<T>::min()) return std::nullopt;
+                if (x > std::numeric_limits<T>::max()) return std::nullopt;
+                out = static_cast<T>(x);
+            } else {
+                unsigned long long x = std::stoull(noBasePrefix, &index, static_cast<int>(base));
+                if (x < std::numeric_limits<T>::min()) return std::nullopt;
+                if (x > std::numeric_limits<T>::max()) return std::nullopt;
+                out = static_cast<T>(x);
+            }
+        } catch (...) {
+            return std::nullopt;
+        }
+
+        if (index <noBasePrefix.size()) return std::nullopt;
         return out;
     }
 
@@ -342,9 +361,61 @@ namespace argon::detail {
 
 
 namespace argon::detail {
+    inline bool is_hex_digit(const char c) {
+        return (c >= '0' && c <= '9') ||
+            (c >= 'a' && c <= 'f') ||
+            (c >= 'A' && c <= 'F');
+    }
+
+    inline bool is_number(const std::string_view s) {
+        if (s.empty()) return false;
+        int index = 0;
+        if (s[0] == '-' || s[0] == '+') {
+            index++;
+        }
+
+        // Hexadecimal
+        if (s.size() >= index + 2) {
+            if (s[index] == '0' && (
+                s[index + 1] == 'x' || s[index + 1] == 'X'
+            )) {
+                index += 2;
+                for (; index < s.size(); index++) {
+                    if (!is_hex_digit(s[index])) return false;
+                }
+                return true;
+            }
+        }
+
+        // Binary
+        if (s.size() >= index + 2) {
+            if (s[index] == '0' && (
+                s[index + 1] == 'b' || s[index + 1] == 'B'
+            )) {
+                index += 2;
+                for (; index < s.size(); index++) {
+                    if (s[index] != '0' && s[index] != '1') return false;
+                }
+                return true;
+            }
+        }
+
+        // Decimal integers / floating point
+        bool dot_encountered = false;
+        for (; index < s.size(); index++) {
+            if (s[index] == '.') {
+                if (dot_encountered) return false;
+                dot_encountered = true;
+                continue;
+            }
+            if (!std::isdigit(s[index])) return false;
+            return true;
+        }
+        return false;
+    }
+
     inline auto looks_like_flag(const std::string_view str) -> bool {
-        const bool isNumber = parse_integral_type<uint32_t>(str) || parse_floating_point<float>(str);
-        return !str.empty() && str[0] == '-' && !isNumber;
+        return !str.empty() && str[0] == '-' && !is_number(str);
     }
 
     inline auto validate_flag(const std::string_view flag) -> void {

@@ -4,7 +4,7 @@
 
 #include <argon/argon.hpp>
 
-#include <helpers/cli_test_helpers.hpp>
+#include <helpers/cli.hpp>
 
 
 TEST_CASE("cmake list syntax", "[argon][types][custom][cmake-lists]") {
@@ -71,4 +71,19 @@ TEST_CASE("cmake list syntax", "[argon][types][custom][cmake-lists]") {
             CHECK(list->list == std::vector<std::string>{"one", "", "two", ""});
         }
     }
+}
+
+TEST_CASE("no conversion fn provided", "[argon][types][custom][no-conversion]") {
+    struct Custom {};
+
+    CREATE_DEFAULT_ROOT(cmd);
+    std::ignore = cmd.add_flag(argon::Flag<Custom>("--custom"));
+    argon::Cli cli{cmd};
+
+    const Argv argv{"--custom", "test"};
+    INFO(argv.get_repr());
+
+    REQUIRE_THROWS_AS([&] {
+        auto runSuccess = cli.run(argv.argc(), argv.argv.data());
+    }(), std::logic_error);
 }

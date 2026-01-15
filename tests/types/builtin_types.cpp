@@ -10,12 +10,44 @@
 
 #include <argon/argon.hpp>
 
-#include <helpers/cli_test_helpers.hpp>
+#include <helpers/cli.hpp>
+#include <helpers/types.hpp>
 
-TEMPLATE_TEST_CASE(
+
+TEMPLATE_LIST_TEST_CASE(
     "integral parsing",
     "[argon][types][built-in][integral]",
-    int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t
+    IntegralTypes
+) {
+    INFO(std::format("parsing type {}", argon::detail::TypeDisplayName<TestType>::value));
+
+    CREATE_DEFAULT_ROOT(cmd);
+    const auto num_handle = cmd.add_flag(argon::Flag<TestType>("--num"));
+    argon::Cli cli{cmd};
+
+    TestType num = GENERATE(
+        std::numeric_limits<TestType>::min(),
+        std::numeric_limits<TestType>::max()
+    );
+
+    const std::string num_str = GENERATE_COPY(
+        std::format("{}", num),
+        std::format("{:#x}", num),
+        std::format("{:#b}", num)
+    );
+
+    const Argv argv{"--num", num_str};
+    INFO(argv.get_repr());
+    REQUIRE_RUN_CLI(cli, argv);
+
+    const auto results = REQUIRE_ROOT_CMD(cli);
+    CHECK_SINGLE_RESULT(results, num_handle, num);
+}
+
+TEMPLATE_LIST_TEST_CASE(
+    "floating point parsing",
+    "[argon][types][built-in][floating-point]",
+    FloatingPointTypes
 ) {
     INFO(std::format("parsing type {}", argon::detail::TypeDisplayName<TestType>::value));
 
@@ -24,8 +56,8 @@ TEMPLATE_TEST_CASE(
     const auto max_handle = cmd.add_flag(argon::Flag<TestType>("--max"));
     argon::Cli cli{cmd};
 
-    TestType min = std::numeric_limits<TestType>::min();
-    TestType max = std::numeric_limits<TestType>::max();
+    TestType min = -1234.5678e10;
+    TestType max = 1234.5678e10;
     const std::string min_str = std::to_string(min);
     const std::string max_str = std::to_string(max);
 
@@ -34,8 +66,8 @@ TEMPLATE_TEST_CASE(
     REQUIRE_RUN_CLI(cli, argv);
 
     const auto results = REQUIRE_ROOT_CMD(cli);
-    CHECK_SINGLE_RESULT(results, min_handle, min);
-    CHECK_SINGLE_RESULT(results, max_handle, max);
+    CHECK_SINGLE_FLOAT(results, min_handle, min);
+    CHECK_SINGLE_FLOAT(results, max_handle, max);
 }
 
 TEST_CASE(
