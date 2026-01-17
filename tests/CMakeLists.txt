@@ -19,6 +19,9 @@ target_sources(ArgonTests
         arguments/multi-flags.cpp
         arguments/multi-positionals.cpp
         arguments/positionals.cpp
+        configuration/with_alias.cpp
+        configuration/with_default.cpp
+        configuration/with_implicit.cpp
         errors/conversion_failures.cpp
         types/builtin_types.cpp
         types/custom_types.cpp
