@@ -25,6 +25,8 @@ target_sources(ArgonTests
         errors/conversion_failures.cpp
         types/builtin_types.cpp
         types/custom_types.cpp
+        validation/with_group_validator.cpp
+        validation/with_value_validator.cpp
 
     PRIVATE
         FILE_SET HEADERS
