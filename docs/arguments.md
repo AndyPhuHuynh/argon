@@ -285,12 +285,10 @@ Available: **All argument types**
 
 The `with_conversion_fn` method can be used to define a custom conversion function for user-defined data types.
 
-`with_conversion_fn` accepts any callable object that takes in a `std::string_view` and returns a `std::optional<T>`,
-where T is the user-defined type. The callable should return a `std::nullopt` to indicate that the conversion has failed.
-
-An additional overload of `with_conversion_fn` allows an explicit error message to be provided. In this overload, the
-callable is passed as the first argument, and a string describing the conversion failure is passed as the second
-argument. This error message is reported to the user if conversion fails.
+`with_conversion_fn` accepts two parameters:
+1. Any callable object that takes in a `std::string_view` and returns a `std::optional<T>`,
+where T is the user-defined type. The callable should return a `std::nullopt` to indicate that the conversion has failed. 
+2. A string describing the conversion failure. This error message is reported to the user if conversion fails.
 
 ```c++
 struct Student {

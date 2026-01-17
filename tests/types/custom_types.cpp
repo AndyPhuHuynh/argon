@@ -29,7 +29,7 @@ TEST_CASE("cmake list syntax", "[argon][types][custom][cmake-lists]") {
     CREATE_DEFAULT_ROOT(cmd);
     const auto list_handle = cmd.add_flag(
         argon::Flag<CMakeList>("--list")
-            .with_conversion_fn(conversion)
+            .with_conversion_fn(conversion, "value must be in the syntax of a list in CMakeLang")
     );
     argon::Cli cli{cmd};
 
