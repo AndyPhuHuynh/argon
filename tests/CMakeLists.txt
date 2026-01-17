@@ -13,6 +13,12 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(ArgonTests)
 target_sources(ArgonTests
     PRIVATE
+        arguments/choices.cpp
+        arguments/flags.cpp
+        arguments/multi-choices.cpp
+        arguments/multi-flags.cpp
+        arguments/multi-positionals.cpp
+        arguments/positionals.cpp
         errors/conversion_failures.cpp
         types/builtin_types.cpp
         types/custom_types.cpp

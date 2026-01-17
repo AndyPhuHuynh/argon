@@ -1263,6 +1263,12 @@ namespace argon {
         std::is_same_v<T, ChoiceTag>;
 
     template <typename T>
+    concept IsMultiValueHandleTag =
+        std::is_same_v<T, MultiFlagTag> ||
+        std::is_same_v<T, MultiPositionalTag> ||
+        std::is_same_v<T, MultiChoiceTag>;
+
+    template <typename T>
     struct is_argument_handle : std::false_type {};
 
     template <typename CommandTag, typename Value, typename Tag>

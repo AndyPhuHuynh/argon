@@ -64,6 +64,15 @@ inline auto REQUIRE_ROOT_CMD(const argon::Cli& cli) -> argon::Results<> {
     return REQUIRE_COMMAND(cli, cli.get_root_handle());
 }
 
+template <typename CmdTag, typename ValueType, typename Tag>
+auto CHECK_NOT_SPECIFIED(
+    const argon::Results<CmdTag>& results,
+    const argon::Handle<CmdTag, ValueType, Tag>& handle
+) {
+    CHECK_FALSE(results.is_specified(handle));
+}
+
+
 template <typename CmdTag, typename ValueType, typename Tag> requires argon::IsSingleValueHandleTag<Tag>
 auto CHECK_SINGLE_RESULT(
     const argon::Results<CmdTag>& results,
@@ -84,4 +93,15 @@ auto CHECK_SINGLE_FLOAT(
     std::optional<ValueType> actual = results.get(handle);
     CHECK(actual.has_value());
     CHECK(actual.value() == Catch::Approx(expected));
+}
+
+template <typename CmdTag, typename ValueType, typename Tag> requires argon::IsMultiValueHandleTag<Tag>
+auto CHECK_MULTI_RESULT(
+    const argon::Results<CmdTag>& results,
+    const argon::Handle<CmdTag, ValueType, Tag>& handle,
+    const std::vector<ValueType>& expected
+) {
+    std::vector<ValueType> actual = results.get(handle);
+    CHECK_FALSE(actual.empty());
+    CHECK(actual == expected);
 }
