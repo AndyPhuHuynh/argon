@@ -121,7 +121,7 @@ namespace argon::detail {
     }
 
     template <typename T>
-    constexpr bool is_argon_integral_v = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char>;
+    constexpr bool is_integral_v = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, char>;
 
     enum class Base {
         Invalid = 0,
@@ -147,7 +147,7 @@ namespace argon::detail {
         return Base::Invalid;
     }
 
-    template <typename T> requires is_argon_integral_v<T>
+    template <typename T> requires is_integral_v<T>
     auto parse_integral_type(const std::string_view arg) -> std::optional<T> {
         if (arg.empty()) return std::nullopt;
         const auto base = get_base_from_prefix(arg);
@@ -248,7 +248,7 @@ namespace argon::detail {
             if (!m_conversionErrorMsg.empty()) {
                 return m_conversionErrorMsg;
             }
-            if constexpr (is_argon_integral_v<T> && std::is_unsigned_v<T>) {
+            if constexpr (is_integral_v<T> && std::is_unsigned_v<T>) {
                 return std::format("expected an {}", TypeDisplayName<T>::value);
             }
             return std::format("expected a {}", TypeDisplayName<T>::value);
@@ -267,7 +267,7 @@ namespace argon::detail {
                 result = parse_floating_point<T>(value);
             }
             // Parse as argon integral if valid
-            else if constexpr (is_argon_integral_v<T>) {
+            else if constexpr (is_integral_v<T>) {
                 result = parse_integral_type<T>(value);
             }
             // Parse as boolean if T is a boolean
@@ -487,7 +487,7 @@ namespace argon::detail {
 namespace argon::detail {
     template <typename T>
     [[nodiscard]] static auto get_default_input_hint() -> std::string {
-        if constexpr (detail::is_argon_integral_v<T> || std::is_floating_point_v<T>) return "num";
+        if constexpr (detail::is_integral_v<T> || std::is_floating_point_v<T>) return "num";
         else if constexpr (std::is_same_v<T, bool>) return "bool";
         else if constexpr (std::is_same_v<T, char>) return "char";
         else if constexpr (std::is_same_v<T, std::string>) return "string";
@@ -2722,12 +2722,9 @@ namespace argon::detail {
     public:
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
         explicit ThresholdNode(const uint32_t expectedAmount, Handle&& handle, Handles&&... handles)
-            : m_handles{ make_polymorphic<ConditionNode>(PresentNode(std::forward<Handle>(handle))),
-                         make_polymorphic<ConditionNode>(PresentNode(std::forward<Handles>(handles)))... },
+            : m_handles{ make_polymorphic<ConditionNode<command_tag_of_t<Handle>>>(PresentNode<command_tag_of_t<Handle>, Handle>(std::forward<Handle>(handle))),
+                         make_polymorphic<ConditionNode<command_tag_of_t<Handles>>>(PresentNode<command_tag_of_t<Handles>, Handles>(std::forward<Handles>(handles)))... },
               m_threshold(expectedAmount) {
-            if (m_threshold == 0) {
-                throw std::invalid_argument(std::format("{} amount must not be zero", Policy::name));
-            }
             if (m_threshold > m_handles.size()) {
                 throw std::invalid_argument(std::format(
                     "{} amount '{}' must not be greater than number of provided handles '{}'",
@@ -2831,15 +2828,15 @@ namespace argon {
         friend auto absent(T&& handle) -> Condition<command_tag_of_t<T>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-            requires (std::is_same_v<Handle, Handles> && ...)
+            requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
         friend auto exactly(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-            requires (std::is_same_v<Handle, Handles> && ...)
+            requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
         friend auto at_least(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
         template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-            requires (std::is_same_v<Handle, Handles> && ...)
+            requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
         friend auto at_most(uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>>;
 
         template <typename CmdTag>
@@ -2863,8 +2860,8 @@ namespace argon {
 
         friend auto operator!(const Condition& operand) -> Condition {
             Condition cond;
-            cond.m_condition = detail::make_polymorphic<detail::ConditionNode>(
-                detail::NotNode(operand.m_condition)
+            cond.m_condition = detail::make_polymorphic<detail::ConditionNode<CommandTag>>(
+                detail::NotNode<CommandTag>(operand.m_condition)
             );
             return cond;
         }
@@ -2891,7 +2888,7 @@ namespace argon {
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        requires (std::is_same_v<Handle, Handles> && ...)
+        requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
     [[nodiscard]] auto exactly(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
         using CmdTag = command_tag_of_t<Handle>;
         Condition<CmdTag> cond;
@@ -2902,7 +2899,7 @@ namespace argon {
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        requires (std::is_same_v<Handle, Handles> && ...)
+        requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
     [[nodiscard]] auto at_least(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
         using CmdTag = command_tag_of_t<Handle>;
         Condition<CmdTag> cond;
@@ -2913,7 +2910,7 @@ namespace argon {
     }
 
     template <IsArgumentHandle Handle, IsArgumentHandle... Handles>
-        requires (std::is_same_v<Handle, Handles> && ...)
+        requires (std::is_same_v<command_tag_of_t<Handle>, command_tag_of_t<Handles>> && ...)
     [[nodiscard]] auto at_most(const uint32_t threshold, Handle&& handle, Handles&&... handles) -> Condition<command_tag_of_t<Handle>> {
         using CmdTag = command_tag_of_t<Handle>;
         Condition<CmdTag> cond;

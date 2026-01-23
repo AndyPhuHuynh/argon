@@ -22,6 +22,13 @@ target_sources(ArgonTests
         configuration/with_alias.cpp
         configuration/with_default.cpp
         configuration/with_implicit.cpp
+        constraints/absent.cpp
+        constraints/at-least.cpp
+        constraints/at-most.cpp
+        constraints/condition.cpp
+        constraints/exactly.cpp
+        constraints/operators.cpp
+        constraints/present.cpp
         errors/conversion_failures.cpp
         types/builtin_types.cpp
         types/custom_types.cpp

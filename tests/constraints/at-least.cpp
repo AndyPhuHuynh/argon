@@ -1,0 +1,158 @@
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
+
+#include <helpers/cli.hpp>
+
+
+TEST_CASE("at least test", "[argon][constraints][at-least]") {
+    CREATE_DEFAULT_ROOT(cmd);
+    const auto int_handle = cmd.add_flag(argon::Flag<int>("-i"));
+    const auto str_handle = cmd.add_multi_flag(argon::MultiFlag<std::string>("-s"));
+    const auto pos_handle = cmd.add_positional(argon::Positional<char>("c"));
+
+    SECTION("at least one") {
+        const std::string msg = "at least one required";
+        cmd.constraints.require(argon::at_least(1, int_handle, str_handle, pos_handle), msg);
+        argon::Cli cli{cmd};
+
+        const auto REQUIRE_ERROR = [&](const Argv& argv) {
+            const auto [handle, messages] = REQUIRE_ERROR_ON_RUN(cli, argv);
+            REQUIRE(messages.size() == 1);
+            CHECK_THAT(messages.at(0), Catch::Matchers::ContainsSubstring(msg));
+        };
+
+        SECTION("none") { REQUIRE_ERROR({}); }
+
+        SECTION("only i") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_NOT_SPECIFIED(results, str_handle);
+            CHECK_NOT_SPECIFIED(results, pos_handle);
+        }
+
+        SECTION("only s") {
+            REQUIRE_RUN_CLI(cli, {"-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_NOT_SPECIFIED(results, int_handle);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_NOT_SPECIFIED(results, pos_handle);
+        }
+
+        SECTION("only pos") {
+            REQUIRE_RUN_CLI(cli, {"c"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_NOT_SPECIFIED(results, int_handle);
+            CHECK_NOT_SPECIFIED(results, str_handle);
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+
+        SECTION("i and s") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_NOT_SPECIFIED(results, pos_handle);
+        }
+
+        SECTION("i and p") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "c"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_NOT_SPECIFIED(results, str_handle);
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+
+        SECTION("s and p") {
+            REQUIRE_RUN_CLI(cli, {"c", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_NOT_SPECIFIED(results, int_handle);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+
+        SECTION("all three") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "c", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+    }
+
+    SECTION("at least two") {
+        const std::string msg = "at least two required";
+        cmd.constraints.require(argon::at_least(2, int_handle, str_handle, pos_handle), msg);
+        argon::Cli cli{cmd};
+
+        const auto REQUIRE_ERROR = [&](const Argv& argv) {
+            const auto [handle, messages] = REQUIRE_ERROR_ON_RUN(cli, argv);
+            REQUIRE(messages.size() == 1);
+            CHECK_THAT(messages.at(0), Catch::Matchers::ContainsSubstring(msg));
+        };
+
+        SECTION("none") { REQUIRE_ERROR({}); }
+        SECTION("only i") { REQUIRE_ERROR({"-i", "1"}); }
+        SECTION("only s") { REQUIRE_ERROR({"-s", "1", "2"}); }
+        SECTION("only pos") { REQUIRE_ERROR({"c"}); }
+
+        SECTION("i and s") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_NOT_SPECIFIED(results, pos_handle);
+        }
+        SECTION("i and p") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "c"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_NOT_SPECIFIED(results, str_handle);
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+        SECTION("s and p") {
+            REQUIRE_RUN_CLI(cli, {"c", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_NOT_SPECIFIED(results, int_handle);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+
+        SECTION("all three") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "c", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+    }
+
+    SECTION("at least three") {
+        const std::string msg = "at least three required";
+        cmd.constraints.require(argon::at_least(3, int_handle, str_handle, pos_handle), msg);
+        argon::Cli cli{cmd};
+
+        const auto REQUIRE_ERROR = [&](const Argv& argv) {
+            const auto [handle, messages] = REQUIRE_ERROR_ON_RUN(cli, argv);
+            REQUIRE(messages.size() == 1);
+            CHECK_THAT(messages.at(0), Catch::Matchers::ContainsSubstring(msg));
+        };
+
+        SECTION("none") { REQUIRE_ERROR({}); }
+        SECTION("only i") { REQUIRE_ERROR({"-i", "1"}); }
+        SECTION("only s") { REQUIRE_ERROR({"-s", "1", "2"}); }
+        SECTION("only pos") { REQUIRE_ERROR({"c"}); }
+        SECTION("i and s") { REQUIRE_ERROR({"-i", "1", "-s", "1", "2"}); }
+        SECTION("i and p") { REQUIRE_ERROR({"-i", "1", "c"}); }
+        SECTION("s and p") { REQUIRE_ERROR({"c", "-s", "1", "2"}); }
+
+        SECTION("all three") {
+            REQUIRE_RUN_CLI(cli, {"-i", "1", "c", "-s", "1", "2"});
+            const auto results = REQUIRE_ROOT_CMD(cli);
+            CHECK_SINGLE_RESULT(results, int_handle, 1);
+            CHECK_MULTI_RESULT(results, str_handle, {"1", "2"});
+            CHECK_SINGLE_RESULT(results, pos_handle, 'c');
+        }
+    }
+}

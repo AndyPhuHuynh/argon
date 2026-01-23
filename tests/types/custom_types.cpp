@@ -84,6 +84,6 @@ TEST_CASE("no conversion fn provided", "[argon][types][custom][no-conversion]") 
     INFO(argv.get_repr());
 
     REQUIRE_THROWS_AS([&] {
-        auto runSuccess = cli.run(argv.argc(), argv.argv.data());
+        auto runSuccess = cli.run(argv.argc(), argv.argv().data());
     }(), std::logic_error);
 }

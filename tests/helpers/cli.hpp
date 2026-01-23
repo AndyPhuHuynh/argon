@@ -11,34 +11,41 @@
 
 struct Argv {
     std::vector<std::string> storage;
-    std::vector<const char *> argv;
 
     Argv(const std::initializer_list<std::string_view> args) {
         storage.reserve(args.size() + 1);
-        argv.reserve(args.size() + 1);
-
         storage.emplace_back("program.exe");
-        argv.emplace_back(storage.back().c_str());
-
         for (const auto& arg : args) {
             storage.emplace_back(arg);
-            argv.emplace_back(storage.back().c_str());
         }
     }
 
-    [[nodiscard]] int argc() const { return static_cast<int>(argv.size()); }
+    [[nodiscard]] int argc() const { return static_cast<int>(storage.size()); }
+
+    [[nodiscard]] std::vector<const char *> argv() const {
+        return
+            storage
+            | std::views::transform([](const std::string& x) {
+                return x.c_str();
+            })
+            | std::ranges::to<std::vector>();
+    }
 
     [[nodiscard]] std::string get_repr() const {
         std::string res;
-        for (size_t i = 0; i < argv.size(); ++i) {
-            res+= std::format("Argv [{}]: {}\n", i, argv[i]);
+        for (size_t i = 0; i < storage.size(); ++i) {
+            res+= std::format("Argv [{}]: {}\n", i, storage[i]);
         }
         return res;
+    }
+
+    void append(const std::string_view str) {
+        storage.emplace_back(str);
     }
 };
 
 inline void REQUIRE_RUN_CLI(argon::Cli& cli, const Argv& args) {
-    const auto run = cli.run(args.argc(), args.argv.data());
+    const auto run = cli.run(args.argc(), args.argv().data());
     if (!run.has_value()) {
         for (const auto& msg : run.error().messages) {
             std::cout << msg << std::endl;
@@ -48,7 +55,7 @@ inline void REQUIRE_RUN_CLI(argon::Cli& cli, const Argv& args) {
 }
 
 inline auto REQUIRE_ERROR_ON_RUN(argon::Cli& cli, const Argv& args) -> argon::CliRunError {
-    auto run = cli.run(args.argc(), args.argv.data());
+    auto run = cli.run(args.argc(), args.argv().data());
     REQUIRE_FALSE(run.has_value());
     return std::move(run.error());
 }
