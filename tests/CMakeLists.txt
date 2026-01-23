@@ -29,6 +29,7 @@ target_sources(ArgonTests
         constraints/exactly.cpp
         constraints/operators.cpp
         constraints/present.cpp
+        constraints/when.cpp
         errors/conversion_failures.cpp
         types/builtin_types.cpp
         types/custom_types.cpp
