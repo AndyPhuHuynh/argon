@@ -30,7 +30,10 @@ target_sources(ArgonTests
         constraints/operators.cpp
         constraints/present.cpp
         constraints/when.cpp
+        errors/analysis_errors.cpp
         errors/conversion_failures.cpp
+        errors/library_misuse.cpp
+        subcommands/subcommands.cpp
         types/builtin_types.cpp
         types/custom_types.cpp
         validation/with_group_validator.cpp

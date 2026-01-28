@@ -1321,13 +1321,14 @@ namespace argon::detail {
 
         template <typename T>
         [[nodiscard]] auto flag_or_alias_exists(const T& flag) const -> std::optional<std::string> {
-            if (contains_flag(flag.get_flag()) ||
-                contains_multi_flag(flag.get_flag()) ||
-                contains_choice(flag.get_flag())) {
+            if (const auto flag_str = flag.get_flag(); contains_flag(flag_str) ||
+                                                       contains_multi_flag(flag_str) ||
+                                                       contains_choice(flag_str) ||
+                                                       contains_multi_choice(flag_str)) {
                 return flag.get_flag();
             }
             for (const auto& alias : flag.get_aliases()) {
-                if (contains_flag(alias) || contains_multi_flag(alias) || contains_choice(alias)) {
+                if (contains_flag(alias) || contains_multi_flag(alias) || contains_choice(alias) || contains_multi_choice(alias)) {
                     return alias;
                 }
             }
